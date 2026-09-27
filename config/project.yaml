@@ -5,10 +5,10 @@ goal: real_users           # portfolio | study | real_users
 autonomy: checkpoints      # guided | checkpoints | autonomous
 
 area:
-  name: "Bielefeld city centre"
-  # Proposed; confirmed with the user after the phase 0 coverage report.
-  bbox: [8.526, 52.016, 8.544, 52.030]   # min_lon, min_lat, max_lon, max_lat (~1.9 km²)
-  confirmed: false
+  name: "Bielefeld centre core (Altstadt, Jahnplatz, Bahnhofstrasse)"
+  # Shrunk to the core at the phase 0 review (DECISIONS.md, 2026-09-27).
+  bbox: [8.5285, 52.0180, 8.5385, 52.0300]   # min_lon, min_lat, max_lon, max_lat
+  confirmed: true
 
 profiles: [wheelchair, stroller, suitcase]
 

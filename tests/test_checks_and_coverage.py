@@ -48,3 +48,9 @@ def test_covered_share():
     share = coverage.covered_share(pts, w, np.array([[10.0, 0.0]]), near_m=15)
     assert share == pytest.approx(0.25, abs=0.02)
     assert coverage.covered_share(pts, w, np.empty((0, 2))) == 0.0
+
+
+def test_in_bbox():
+    bbox = (8.5, 52.0, 8.6, 52.1)
+    assert coverage.in_bbox((8.55, 52.05), bbox)
+    assert not coverage.in_bbox((8.45, 52.05), bbox)

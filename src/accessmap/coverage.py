@@ -37,6 +37,10 @@ def image_age_years(captured_at_ms: int, now: datetime | None = None) -> float:
     return (now - datetime.fromtimestamp(captured_at_ms / 1000, UTC)).days / 365.25
 
 
+def in_bbox(lonlat: tuple[float, float], bbox) -> bool:
+    return bbox[0] <= lonlat[0] <= bbox[2] and bbox[1] <= lonlat[1] <= bbox[3]
+
+
 def sample_lines(lines_xy: list[np.ndarray], step: float = SAMPLE_STEP_M
                  ) -> tuple[np.ndarray, np.ndarray]:
     """Points every `step` m along each polyline (projected coords). Returns (points, weights)
@@ -138,7 +142,8 @@ def build_report(settings: Settings, refresh: bool = False) -> dict:
     network_km = float(edges_m.length.sum() / 1000)
 
     log.info("Fetching Mapillary image index")
-    images = fetch_images(settings, refresh=refresh)
+    # Mapillary filters on the raw position; drop images whose corrected position is outside.
+    images = [i for i in fetch_images(settings, refresh=refresh) if in_bbox(position(i), bbox)]
     ages = np.array([image_age_years(i["captured_at"]) for i in images]) if images else np.empty(0)
     lonlat = np.array([position(i) for i in images]) if images else np.empty((0, 2))
     to_m = Transformer.from_crs(4326, epsg, always_xy=True)
