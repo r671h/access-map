@@ -41,6 +41,18 @@ def cmd_coverage(args) -> int:
     return 0
 
 
+def cmd_fetch_osm(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.osm.fetch import run
+
+    s = run(get_settings(), refresh=args.refresh)
+    g = s["graph"]
+    print(f"walk graph: {g['edges_undirected']} edges, {g['length_km']} km; "
+          f"{s['components']['count']} components; kerb nodes {s['layers']['kerb_nodes']}, "
+          f"steps {s['layers']['steps_ways']} -> reports/osm_summary.md")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -51,6 +63,9 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("coverage", help="imagery and OSM coverage report for the area")
     c.add_argument("--refresh", action="store_true", help="re-fetch the Mapillary index")
     c.set_defaults(fn=cmd_coverage)
+    f = sub.add_parser("fetch-osm", help="walking graph, kerbs, steps, barriers + tag summary")
+    f.add_argument("--refresh", action="store_true", help="re-download instead of using cache")
+    f.set_defaults(fn=cmd_fetch_osm)
     return p
 
 

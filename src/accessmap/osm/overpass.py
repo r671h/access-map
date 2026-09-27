@@ -27,7 +27,7 @@ def query(ql: str, *, timeout: float = 180, endpoints: tuple[str, ...] = ENDPOIN
     errors = []
     for url in endpoints:
         try:
-            r = request("POST", url, data={"data": ql}, timeout=timeout, retries=2)
+            r = request("POST", url, data={"data": ql}, timeout=timeout, retries=1)
             if "json" not in r.headers.get("Content-Type", ""):
                 # Overpass reports overload as an HTML page, sometimes with status 200.
                 raise HttpError(f"non-JSON response: {r.text[:200]}")

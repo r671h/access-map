@@ -78,26 +78,6 @@ def covered_share(points: np.ndarray, weights: np.ndarray, images_xy: np.ndarray
     return float(weights[near].sum() / weights.sum())
 
 
-def load_walk_network(settings: Settings):
-    import osmnx as ox
-
-    from accessmap.osm.overpass import ENDPOINTS
-
-    ox.settings.cache_folder = str(settings.paths.cache / "osmnx")
-    ox.settings.use_cache = True
-    ox.settings.requests_timeout = 180
-    bbox = settings.project.area.bbox
-    last = None
-    for url in ENDPOINTS:
-        ox.settings.overpass_url = url.removesuffix("/interpreter")
-        try:
-            return ox.graph_from_bbox(bbox, network_type="walk", simplify=True, retain_all=True)
-        except Exception as e:  # noqa: BLE001 - try the next mirror
-            log.warning("osmnx via %s failed: %s", url, e)
-            last = e
-    raise RuntimeError(f"could not download walking network: {last}")
-
-
 def fetch_images(settings: Settings, refresh: bool = False) -> list[dict]:
     """Image index for the bbox (id, time, position, pano flag), cached on disk."""
     from accessmap.imagery.mapillary import COUNT_FIELDS, search_bbox
@@ -123,6 +103,7 @@ def build_report(settings: Settings, refresh: bool = False) -> dict:
     from pyproj import Transformer
 
     from accessmap.imagery.mapillary import position
+    from accessmap.osm.network import download_walk_graph
     from accessmap.osm.overpass import count
 
     p = settings.project
@@ -133,7 +114,7 @@ def build_report(settings: Settings, refresh: bool = False) -> dict:
     osm_counts = count(bbox, OSM_SELECTORS)
 
     log.info("Downloading walking network")
-    G = load_walk_network(settings)
+    G = download_walk_graph(settings)
     edges = ox.graph_to_gdfs(G, nodes=False)
     epsg = utm_epsg((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
     edges_m = edges.to_crs(epsg)
