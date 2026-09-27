@@ -53,6 +53,15 @@ def cmd_fetch_osm(args) -> int:
     return 0
 
 
+def cmd_fetch_images(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.imagery.fetch import run
+
+    stats = run(get_settings(), refresh=args.refresh, reselect=args.reselect)
+    print(json.dumps(stats, indent=2, default=str))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -66,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     f = sub.add_parser("fetch-osm", help="walking graph, kerbs, steps, barriers + tag summary")
     f.add_argument("--refresh", action="store_true", help="re-download instead of using cache")
     f.set_defaults(fn=cmd_fetch_osm)
+    i = sub.add_parser("fetch-images", help="select, download and crop Mapillary frames")
+    i.add_argument("--refresh", action="store_true",
+                   help="re-fetch metadata and redo the selection")
+    i.add_argument("--reselect", action="store_true",
+                   help="redo the selection from cached metadata")
+    i.set_defaults(fn=cmd_fetch_images)
     return p
 
 

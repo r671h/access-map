@@ -22,6 +22,7 @@ LAYER_QUERIES = {
     "crossings": 'node["highway"="crossing"]',
     "barriers": 'node["barrier"]',
     "steps": 'way["highway"="steps"]',
+    "major_roads": 'way["highway"~"^(motorway|trunk)(_link)?$"]',
 }
 
 
@@ -36,6 +37,9 @@ LAYER_PREDICATES = {
     "crossings": lambda el: el["type"] == "node" and _tag(el, "highway") == "crossing",
     "barriers": lambda el: el["type"] == "node" and _tag(el, "barrier") is not None,
     "steps": lambda el: el["type"] == "way" and _tag(el, "highway") == "steps",
+    # Roads without pedestrian space; used to drop frames shot from them (phase 2).
+    "major_roads": lambda el: el["type"] == "way" and str(_tag(el, "highway")).startswith(
+        ("motorway", "trunk")),
 }
 
 

@@ -104,4 +104,4 @@ def test_split_layers_assigns_elements_to_every_matching_layer():
     ]
     layers = fetch.split_layers(els)
     assert {n: len(fc["features"]) for n, fc in layers.items()} == {
-        "kerbs": 1, "crossings": 1, "barriers": 1, "steps": 1}
+        "kerbs": 1, "crossings": 1, "barriers": 1, "steps": 1, "major_roads": 0}
