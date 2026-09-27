@@ -1,0 +1,88 @@
+# Routing profiles. Edge cost:
+#   length_m * surface_multiplier[surface] + sum(penalty_m[barrier] * confidence)
+# forbidden: the edge is removed if barrier confidence >= forbid_threshold,
+# otherwise fallback_penalty_m is added.
+# These are starting values. Claude Code reviews them with the user in phase 6
+# (see docs/DECISIONS_GUIDE.md) and records every change in DECISIONS.md.
+# Profiles not selected in config/project.yaml are ignored; extra profiles the user
+# asks for (walker, elderly, pushed_bike) are added here by Claude and shown for approval.
+
+defaults:
+  forbid_threshold: 0.6
+  fallback_penalty_m: 400
+  temporary_factor: 0.5
+  temporary_max_age_days: 365
+
+profiles:
+  wheelchair:
+    label: "Wheelchair"
+    forbidden: [stairs, step, raised_curb, no_sidewalk]
+    penalty_m:
+      narrow_passage: 250
+      steep_slope: 300
+      rough_surface: 150
+      construction: 300
+      parked_vehicle: 100
+      curb_ramp: -5          # small bonus for crossings with a ramp
+    surface_multiplier:
+      asphalt: 1.0
+      concrete: 1.0
+      paving_stones: 1.1
+      sett: 1.8
+      cobblestone: 2.5
+      gravel: 2.0
+      unpaved: 2.5
+      unknown: 1.15
+    osm_rules:
+      wheelchair_no: forbid
+
+  stroller:
+    label: "Stroller"
+    forbidden: [stairs]
+    penalty_m:
+      step: 60
+      raised_curb: 40
+      narrow_passage: 120
+      steep_slope: 80
+      rough_surface: 60
+      no_sidewalk: 200
+      construction: 150
+      parked_vehicle: 50
+      curb_ramp: -3
+    surface_multiplier:
+      asphalt: 1.0
+      concrete: 1.0
+      paving_stones: 1.05
+      sett: 1.4
+      cobblestone: 1.8
+      gravel: 1.5
+      unpaved: 1.8
+      unknown: 1.1
+    osm_rules:
+      wheelchair_no: ignore
+
+  suitcase:
+    label: "Rolling suitcase"
+    forbidden: []
+    penalty_m:
+      stairs: 250
+      step: 20
+      raised_curb: 15
+      narrow_passage: 40
+      steep_slope: 40
+      rough_surface: 80
+      no_sidewalk: 100
+      construction: 80
+      parked_vehicle: 20
+      curb_ramp: -2
+    surface_multiplier:
+      asphalt: 1.0
+      concrete: 1.0
+      paving_stones: 1.1
+      sett: 1.6
+      cobblestone: 2.0
+      gravel: 2.2
+      unpaved: 2.2
+      unknown: 1.1
+    osm_rules:
+      wheelchair_no: ignore

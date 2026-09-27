@@ -1,0 +1,54 @@
+# Project settings, filled in from the kickoff interview on 2026-09-27
+# (see DECISIONS.md). Secrets never go here — they live in .env.
+
+goal: real_users           # portfolio | study | real_users
+autonomy: checkpoints      # guided | checkpoints | autonomous
+
+area:
+  name: "Bielefeld city centre"
+  # Proposed; confirmed with the user after the phase 0 coverage report.
+  bbox: [8.526, 52.016, 8.544, 52.030]   # min_lon, min_lat, max_lon, max_lat (~1.9 km²)
+  confirmed: false
+
+profiles: [wheelchair, stroller, suitcase]
+
+ui:
+  languages: [en, de]      # first entry is the default
+  language: en
+
+gemini:
+  # Phase 3 pilot: 30 frames on each candidate, then the user picks one.
+  # Model ids are confirmed against client.models.list() in phase 0.
+  model: null
+  pilot_candidates: [gemini-3.8-flash, gemini-3.1-flash-lite]
+  prefer_free_tier: true
+  rpm: 60                  # lowered in phase 0 to the key's real limit
+  thinking: minimal
+
+budget:
+  max_images: 300
+  max_gemini_calls: 1200
+
+imagery:
+  sources: [mapillary]     # mapillary | own_photos
+  max_age_years: 6
+  pano_crops: 4
+
+detection:
+  types: [curb_ramp, raised_curb, step, stairs, narrow_passage, steep_slope,
+          rough_surface, no_sidewalk]
+  preference: precision    # asked in phase 5: precision | recall | balanced
+
+geo:
+  snap_curb_m: 12
+  snap_other_m: 10
+
+routing:
+  max_detour: 0.5          # asked in phase 6; +50%, null = unlimited
+  temporary_barriers: ignore   # no temporary types are detected
+
+app:
+  features: [map_routes, feedback, osm_export, stats_page]
+  layout: side_panel       # asked in phase 7
+  basemap: light           # asked in phase 7
+  run_mode: docker         # local | docker | hosting_ready
