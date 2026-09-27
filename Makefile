@@ -3,7 +3,7 @@
 UV ?= uv
 RUN = $(UV) run
 
-.PHONY: setup check coverage fetch-osm fetch-images test lint
+.PHONY: setup check coverage fetch-osm fetch-images pilot analyze test lint
 
 setup:
 	$(UV) sync --extra dev
@@ -19,6 +19,12 @@ fetch-osm:
 
 fetch-images:
 	$(RUN) accessmap fetch-images
+
+pilot:
+	$(RUN) accessmap pilot
+
+analyze:
+	$(RUN) accessmap analyze --all
 
 test:
 	$(RUN) pytest

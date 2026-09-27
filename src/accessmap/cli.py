@@ -25,6 +25,10 @@ def cmd_check(args) -> int:
     results = run_checks(settings)
     print(format_table(results))
     gem = next(r for r in results if r.service == "Gemini")
+    if gem.extra.get("calls"):
+        from accessmap.vision.analyze import ledger_for
+
+        ledger_for(settings).record({"model": "check", "ok": True, "calls": gem.extra["calls"]})
     if gem.extra.get("models"):
         out = settings.paths.reports / "gemini_models.json"
         out.write_text(json.dumps(gem.extra, indent=2), encoding="utf-8")
@@ -62,6 +66,43 @@ def cmd_fetch_images(args) -> int:
     return 0
 
 
+def cmd_analyze(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.vision.analyze import load_frames, run
+
+    settings = get_settings()
+    model = args.model or settings.project.gemini.model
+    if not model:
+        print("No model chosen yet: pass --model or set gemini.model in config/project.yaml")
+        return 2
+    ids = None if args.all else sorted(load_frames(settings).frame_id)[: args.limit]
+    stats = run(settings, model, ids, prompt_version=args.prompt)
+    print(json.dumps(stats, indent=2))
+    return 0
+
+
+def cmd_pilot(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.vision.analyze import compare_sheets, load_frames, pilot_frame_ids, run
+
+    settings = get_settings()
+    models = args.models or settings.project.gemini.pilot_candidates
+    ids = pilot_frame_ids(load_frames(settings), n=args.n)
+    all_stats = {}
+    for m in models:
+        out = settings.paths.processed / "pilot" / f"{m}_{args.prompt}.jsonl"
+        all_stats[m] = run(settings, m, ids, prompt_version=args.prompt, out=out)
+    sheets = compare_sheets(settings, models, ids, prompt_version=args.prompt)
+    report = {"frame_ids": ids, "stats": all_stats, "sheets": [str(p) for p in sheets]}
+    (settings.paths.reports / f"pilot_{args.prompt}.json").write_text(
+        json.dumps(report, indent=2), encoding="utf-8")
+    print(json.dumps(all_stats, indent=2))
+    print("sheets:")
+    for path in sheets:
+        print(f"  {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -81,6 +122,18 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--reselect", action="store_true",
                    help="redo the selection from cached metadata")
     i.set_defaults(fn=cmd_fetch_images)
+    a = sub.add_parser("analyze", help="run Gemini on frames -> data/processed/detections.jsonl")
+    a.add_argument("--model")
+    a.add_argument("--prompt", default="v1")
+    g = a.add_mutually_exclusive_group(required=True)
+    g.add_argument("--all", action="store_true", help="all frames in the manifest")
+    g.add_argument("--limit", type=int, help="first N frames (for quick tests)")
+    a.set_defaults(fn=cmd_analyze)
+    pl = sub.add_parser("pilot", help="same N frames on each pilot model + comparison sheets")
+    pl.add_argument("--models", nargs="+")
+    pl.add_argument("-n", type=int, default=30)
+    pl.add_argument("--prompt", default="v1")
+    pl.set_defaults(fn=cmd_pilot)
     return p
 
 
