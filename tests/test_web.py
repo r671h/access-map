@@ -156,8 +156,12 @@ def test_export_site(client, settings):
     assert (out / "photos" / "f1.jpg").is_file()
     assert (out / "api" / "feedback.js").is_file() and (out / "vercel.json").is_file()
     assert '"stairs-1"' in (out / "api" / "_ids.js").read_text(encoding="utf-8")
-    # re-export replaces its own folder, but never a foreign one
+    # re-export replaces its own folder (keeping the Vercel link), but never a foreign one
+    (out / ".vercel").mkdir()
+    (out / ".vercel" / "project.json").write_text("{}", encoding="utf-8")
+    (out / "stale.txt").write_text("old", encoding="utf-8")
     export_site(settings, out)
+    assert (out / ".vercel" / "project.json").is_file() and not (out / "stale.txt").exists()
     foreign = settings.root / "not-a-site"
     foreign.mkdir()
     (foreign / "keep.txt").write_text("mine", encoding="utf-8")

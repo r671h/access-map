@@ -3,6 +3,7 @@ name = "accessmap"
 version = "0.1.0"
 description = "Accessibility map and routing for people on wheels, from street-level imagery"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "requests>=2.32",

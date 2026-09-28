@@ -213,4 +213,4 @@ tests/             offline tests (pytest; one Node test for the Vercel function)
   shown resized with their detection boxes; the demo bundles 51 of them, downscaled
   (`tests/fixtures/demo/photos/ATTRIBUTION.md`).
 - Barrier detection by Google Gemini (`gemini-3.8-flash`).
-- No licence has been chosen for the code yet.
+- Code: [MIT](LICENSE). The data keeps its own licences above (ODbL for OSM, CC BY-SA 4.0 for the photos).
