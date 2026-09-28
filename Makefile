@@ -3,7 +3,7 @@
 UV ?= uv
 RUN = $(UV) run
 
-.PHONY: setup check coverage fetch-osm fetch-images pilot analyze geolocate evaluate serve export-site deploy test lint
+.PHONY: setup check coverage fetch-osm fetch-images pilot analyze geolocate evaluate build-graph route-demo serve export-site deploy test lint
 
 setup:
 	$(UV) sync --extra dev
@@ -31,6 +31,12 @@ geolocate:
 
 evaluate:
 	$(RUN) accessmap evaluate
+
+build-graph:
+	$(RUN) accessmap build-graph
+
+route-demo:
+	$(RUN) accessmap route-demo
 
 serve:
 	$(RUN) accessmap serve --host $${HOST:-127.0.0.1}

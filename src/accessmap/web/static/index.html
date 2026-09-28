@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f5fbf%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="router.js"></script>
 <style>
   :root {
     --bg: #ffffff; --panel: #fbfbfa; --text: #1d1d1b; --muted: #62625d; --line: #e3e2dd;
@@ -85,6 +86,19 @@
     outline: 2px solid var(--accent); outline-offset: 2px; }
   select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--bg); color: var(--text); }
+  .legend-routes { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
+  .swatch { display: inline-block; width: 22px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+  .swatch.base { background: #e08214; height: 7px; }
+  .swatch.acc { background: #1f5fbf; }
+  .summary { font-size: 14px; line-height: 1.45; margin: 8px 0 4px; }
+  .warnings { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
+  .warnings li { font-size: 13px; line-height: 1.4; background: #fff4e0; border: 1px solid #f0c987;
+    color: #6b4200; border-radius: 8px; padding: 6px 8px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .cmp th, .cmp td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  .cmp th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .cmp td:not(:first-child), .cmp th:not(:first-child) { text-align: right; }
+  .cmp .better { color: var(--ok); font-weight: 600; }
   footer { padding: 10px 16px 16px; font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: auto; }
   #sheet-toggle { display: none; }
   .maplibregl-popup-content { font: 13px system-ui, sans-serif; padding: 6px 10px; }
@@ -147,6 +161,28 @@
     <p class="hint"><button class="btn small" id="close-detail" data-i18n="close"></button></p>
   </section>
 
+  <section id="route-section">
+    <h2 data-i18n="route"></h2>
+    <div class="row">
+      <label for="profile" data-i18n="profile"></label>
+      <select id="profile"></select>
+      <button class="btn small" id="route-clear" data-i18n="clearRoute" hidden></button>
+    </div>
+    <p class="hint" id="route-hint"></p>
+    <div id="route-result" hidden>
+      <div class="legend-routes">
+        <span><i class="swatch base"></i><span data-i18n="shortest"></span> <b id="r-base-len"></b></span>
+        <span><i class="swatch acc"></i><span data-i18n="accessible"></span> <b id="r-acc-len"></b></span>
+      </div>
+      <p class="summary" id="r-summary"></p>
+      <ul class="warnings" id="r-warnings"></ul>
+      <table class="cmp">
+        <thead><tr><th></th><th data-i18n="shortest"></th><th data-i18n="accessible"></th></tr></thead>
+        <tbody id="r-table"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section>
     <h2 data-i18n="overview"></h2>
     <div class="stats">
@@ -169,15 +205,6 @@
     <div class="row"><label><input type="checkbox" id="show-rejected"> <span data-i18n="showRejected"></span></label></div>
     <div class="row"><label><input type="checkbox" id="show-network" checked> <span data-i18n="showNetwork"></span></label></div>
     <p class="hint" data-i18n="legendHint"></p>
-  </section>
-
-  <section>
-    <h2 data-i18n="route"></h2>
-    <div class="row">
-      <label for="profile" data-i18n="profile"></label>
-      <select id="profile" disabled></select>
-    </div>
-    <p class="hint" data-i18n="routeSoon"></p>
   </section>
 
   <section>
@@ -205,7 +232,22 @@ const I18N = {
     types: "Barrier types", minConf: "Min. confidence", showUnsnapped: "Show barriers off the walking network",
     showRejected: "Show barriers rejected by users", showNetwork: "Show walking network",
     legendHint: "Faded dots are not attached to the walking network and are ignored by routing. Bigger dot = higher confidence.",
-    route: "Route", profile: "Profile", routeSoon: "Route comparison arrives with the routing step (phase 6).",
+    route: "Route", profile: "Profile", clearRoute: "Clear",
+    routeHintStart: "Click the map to set the start.", routeHintEnd: "Now click the destination.",
+    routeHintDone: "Click the map for a new start, or change the profile.",
+    routeNone: "Routing data is not available.", routing: "Calculating…",
+    shortest: "Shortest", accessible: "Accessible", length: "Length", problemsRow: "Barriers on the way",
+    routeSame: (p) => `The shortest route already suits a ${p}.`,
+    routeLonger: (m, pct, avoided) => `The accessible route is ${m} m longer (+${pct}%)${avoided ? ", but avoids " + avoided : ""}.`,
+    routeShorter: (avoided) => `Same length or shorter${avoided ? ", and avoids " + avoided : ""}.`,
+    warn: { no_barrier_free_path: "No barrier-free way was found between these points — the route shown passes the fewest blocking barriers.",
+      detour_exceeds_limit: w => `This detour (+${Math.round(w.detour * 100)}%) is longer than the +${Math.round(w.limit * 100)}% limit; consider another way or assistance.` },
+    routeError: "No route: ",
+    plural: { stairs: ["staircase", "staircases"], step: ["step", "steps"], raised_curb: ["raised curb", "raised curbs"],
+      curb_ramp: ["curb ramp", "curb ramps"], narrow_passage: ["narrow passage", "narrow passages"],
+      steep_slope: ["steep slope", "steep slopes"], rough_surface: ["rough surface", "rough surfaces"],
+      no_sidewalk: ["spot without sidewalk", "spots without sidewalk"], wheelchair_no: ["way marked not wheelchair-accessible", "ways marked not wheelchair-accessible"] },
+    and: "and",
     list: "Barriers", confidence: "Confidence", views: "Seen in", network: "Network", measure: "Size",
     lastSeen: "Photo date", openMapillary: "Open this photo on Mapillary ↗", confirm: "✓ Correct",
     reject: "✗ Wrong", close: "Close", commentPh: "Optional comment (what is really there?)",
@@ -216,6 +258,7 @@ const I18N = {
     note: (m, p, c, b) => `Model ${m}, prompt ${p}. Gemini calls ${c}/${b}. Precision from hand-labelled test frames.`,
     attribution: "Map data and photos:",
     profiles: { wheelchair: "Wheelchair", stroller: "Stroller", suitcase: "Rolling suitcase" },
+    profilesIn: { wheelchair: "wheelchair", stroller: "stroller", suitcase: "rolling suitcase" },
     types_: { curb_ramp: "Curb ramp", raised_curb: "Raised curb", step: "Step", stairs: "Stairs",
       narrow_passage: "Narrow passage", steep_slope: "Steep slope", rough_surface: "Rough surface",
       no_sidewalk: "No sidewalk" },
@@ -226,7 +269,22 @@ const I18N = {
     types: "Barrierearten", minConf: "Mind. Konfidenz", showUnsnapped: "Barrieren abseits des Fußwegenetzes zeigen",
     showRejected: "Von Nutzern abgelehnte Barrieren zeigen", showNetwork: "Fußwegenetz zeigen",
     legendHint: "Blasse Punkte sind nicht mit dem Fußwegenetz verbunden und werden beim Routing ignoriert. Größerer Punkt = höhere Konfidenz.",
-    route: "Route", profile: "Profil", routeSoon: "Der Routenvergleich kommt mit dem Routing-Schritt (Phase 6).",
+    route: "Route", profile: "Profil", clearRoute: "Löschen",
+    routeHintStart: "Klicken Sie auf die Karte, um den Start zu setzen.", routeHintEnd: "Jetzt das Ziel anklicken.",
+    routeHintDone: "Für einen neuen Start auf die Karte klicken oder das Profil wechseln.",
+    routeNone: "Routing-Daten sind nicht verfügbar.", routing: "Berechne…",
+    shortest: "Kürzeste", accessible: "Barrierearm", length: "Länge", problemsRow: "Barrieren unterwegs",
+    routeSame: (p) => `Die kürzeste Route ist bereits für ${p} geeignet.`,
+    routeLonger: (m, pct, avoided) => `Die barrierearme Route ist ${m} m länger (+${pct} %)${avoided ? ", vermeidet aber " + avoided : ""}.`,
+    routeShorter: (avoided) => `Gleich lang oder kürzer${avoided ? " und vermeidet " + avoided : ""}.`,
+    warn: { no_barrier_free_path: "Zwischen diesen Punkten gibt es keinen barrierefreien Weg — die gezeigte Route hat die wenigsten sperrenden Barrieren.",
+      detour_exceeds_limit: w => `Dieser Umweg (+${Math.round(w.detour * 100)} %) überschreitet die Grenze von +${Math.round(w.limit * 100)} %; ggf. anderen Weg oder Hilfe wählen.` },
+    routeError: "Keine Route: ",
+    plural: { stairs: ["Treppe", "Treppen"], step: ["Stufe", "Stufen"], raised_curb: ["hohen Bordstein", "hohe Bordsteine"],
+      curb_ramp: ["abgesenkten Bordstein", "abgesenkte Bordsteine"], narrow_passage: ["Engstelle", "Engstellen"],
+      steep_slope: ["starke Steigung", "starke Steigungen"], rough_surface: ["unebenen Belag", "unebene Beläge"],
+      no_sidewalk: ["Stelle ohne Gehweg", "Stellen ohne Gehweg"], wheelchair_no: ["nicht rollstuhlgerechten Weg", "nicht rollstuhlgerechte Wege"] },
+    and: "und",
     list: "Barrieren", confidence: "Konfidenz", views: "Gesehen auf", network: "Netz", measure: "Maße",
     lastSeen: "Fotodatum", openMapillary: "Dieses Foto auf Mapillary öffnen ↗", confirm: "✓ Stimmt",
     reject: "✗ Falsch", close: "Schließen", commentPh: "Optionaler Kommentar (was ist wirklich dort?)",
@@ -237,6 +295,7 @@ const I18N = {
     note: (m, p, c, b) => `Modell ${m}, Prompt ${p}. Gemini-Aufrufe ${c}/${b}. Präzision aus handbeschrifteten Testbildern.`,
     attribution: "Kartendaten und Fotos:",
     profiles: { wheelchair: "Rollstuhl", stroller: "Kinderwagen", suitcase: "Rollkoffer" },
+    profilesIn: { wheelchair: "Rollstühle", stroller: "Kinderwagen", suitcase: "Rollkoffer" },
     types_: { curb_ramp: "Abgesenkter Bordstein", raised_curb: "Hoher Bordstein", step: "Stufe",
       stairs: "Treppe", narrow_passage: "Engstelle", steep_slope: "Starke Steigung",
       rough_surface: "Unebener Belag", no_sidewalk: "Kein Gehweg" },
@@ -249,15 +308,15 @@ const I18N = {
 const STATIC_SITE = document.querySelector('meta[name="accessmap-mode"]')?.content === "static";
 const API = STATIC_SITE ? {
   config: "data/config.json", barriers: "data/barriers.json", network: "data/network.json",
-  stats: "data/stats.json", photo: id => `photos/${encodeURIComponent(id)}.jpg`,
+  stats: "data/stats.json", graph: "data/graph.json", photo: id => `photos/${encodeURIComponent(id)}.jpg`,
 } : {
   config: "/api/config", barriers: "/api/barriers", network: "/api/network",
-  stats: "/api/stats", photo: id => `/api/frames/${encodeURIComponent(id)}/image`,
+  stats: "/api/stats", graph: "/api/graph", photo: id => `/api/frames/${encodeURIComponent(id)}/image`,
 };
 const FEEDBACK_URL = "/api/feedback";
 
 const state = { lang: "en", cfg: null, all: [], enabled: new Set(), selected: null, view: 0, stats: null,
-  feedbackOnline: true };
+  feedbackOnline: true, router: null, route: { start: null, end: null, result: null, error: null } };
 const $ = id => document.getElementById(id);
 const t = () => I18N[state.lang];
 
@@ -386,7 +445,7 @@ async function sendFeedback(verdict) {
     const res = await r.json();
     p.feedback = res.barrier;
     $("fb-msg").textContent = t().thanks; $("fb-comment").value = "";
-    renderDetail(); refresh(); loadStats();
+    renderDetail(); refresh(); loadStats(); computeRoute();
   } catch { $("fb-msg").textContent = t().failed; }
 }
 
@@ -398,7 +457,94 @@ function applyLang(lang) {
   $("fb-comment").placeholder = t().commentPh;
   const sel = $("profile"); sel.innerHTML = "";
   for (const p of state.cfg.profiles) { const o = document.createElement("option"); o.value = p; o.textContent = t().profiles[p] || p; sel.appendChild(o); }
-  renderStats(); refresh(); renderDetail();
+  const savedProfile = state.route.profile || storageGet("accessmap.profile");
+  if (state.cfg.profiles.includes(savedProfile)) sel.value = savedProfile;
+  renderStats(); refresh(); renderDetail(); renderRoute();
+}
+
+// ---- routing (static/router.js, same algorithm as accessmap.routing.router) ----------
+const EMPTY = { type: "FeatureCollection", features: [] };
+
+function rejectedIds() {
+  return new Set(state.all.filter(f => f.properties.feedback && f.properties.feedback.status === "rejected")
+    .map(f => f.properties.id));
+}
+
+function describeCounts(counts) {
+  const L = t(), parts = Object.entries(counts).sort((a, b) => b[1] - a[1])
+    .map(([type, n]) => `${n} ${(L.plural[type] || [type, type])[n === 1 ? 0 : 1]}`);
+  if (parts.length <= 1) return parts.join("");
+  return parts.slice(0, -1).join(", ") + ` ${L.and} ` + parts[parts.length - 1];
+}
+
+function computeRoute() {
+  const r = state.route;
+  r.profile = $("profile").value;
+  r.result = null; r.error = null;
+  if (state.router && r.start && r.end) {
+    try {
+      r.result = state.router.route(r.start, r.end, r.profile, rejectedIds());
+    } catch (err) { r.error = err.message; }
+  }
+  drawRoute(); renderRoute();
+}
+
+function drawRoute() {
+  const r = state.route, res = r.result;
+  const line = (coords, kind) => ({ type: "Feature", properties: { kind }, geometry: { type: "LineString", coordinates: coords } });
+  map.getSource("routes")?.setData(res ? { type: "FeatureCollection", features: [
+    line(res.baseline.coords, "baseline"), line(res.accessible.coords, "accessible")] } : EMPTY);
+  const pts = [];
+  if (r.start) pts.push({ type: "Feature", properties: { kind: "A" }, geometry: { type: "Point", coordinates: r.start } });
+  if (r.end) pts.push({ type: "Feature", properties: { kind: "B" }, geometry: { type: "Point", coordinates: r.end } });
+  map.getSource("route-points")?.setData({ type: "FeatureCollection", features: pts });
+}
+
+function renderRoute() {
+  const L = t(), r = state.route, res = r.result;
+  $("route-clear").hidden = !r.start;
+  $("route-hint").textContent = !state.router ? L.routeNone : r.error ? L.routeError + r.error
+    : !r.start ? L.routeHintStart : !r.end ? L.routeHintEnd : L.routeHintDone;
+  $("route-result").hidden = !res;
+  if (!res) return;
+  const b = res.baseline, a = res.accessible;
+  $("r-base-len").textContent = `${Math.round(b.length_m)} m`;
+  $("r-acc-len").textContent = `${Math.round(a.length_m)} m`;
+  const avoided = describeCounts(res.avoided);
+  $("r-summary").textContent = res.same_route && !b.problem_count ? L.routeSame(L.profilesIn[res.profile] || res.profile)
+    : res.extra_m > 0.5 ? L.routeLonger(Math.round(res.extra_m), Math.round(res.detour * 100), avoided)
+    : L.routeShorter(avoided);
+  const ul = $("r-warnings"); ul.innerHTML = "";
+  for (const w of res.warnings) {
+    const li = document.createElement("li"), msg = L.warn[w.code];
+    li.textContent = typeof msg === "function" ? msg(w) : (msg || w.code);
+    ul.appendChild(li);
+  }
+  const types = [...new Set([...Object.keys(b.problems), ...Object.keys(a.problems)])];
+  const rows = [[L.length, `${Math.round(b.length_m)} m`, `${Math.round(a.length_m)} m`, false]];
+  rows.push([L.problemsRow, b.problem_count, a.problem_count, a.problem_count < b.problem_count]);
+  for (const ty of types) {
+    const nb = b.problems[ty] || 0, na = a.problems[ty] || 0;
+    rows.push([`· ${(L.plural[ty] || [ty, ty])[1]}`, nb, na, na < nb]);
+  }
+  $("r-table").innerHTML = "";
+  for (const [label, vb, va, better] of rows) {
+    const tr = document.createElement("tr");
+    for (const [i, v] of [label, vb, va].entries()) {
+      const td = document.createElement("td"); td.textContent = v;
+      if (i === 2 && better) td.className = "better";
+      tr.appendChild(td);
+    }
+    $("r-table").appendChild(tr);
+  }
+}
+
+function onMapClick(e) {
+  if (!state.router) return;
+  if (map.queryRenderedFeatures(e.point, { layers: ["barriers"] }).length) return;  // opens the barrier instead
+  const r = state.route, p = [e.lngLat.lng, e.lngLat.lat];
+  if (!r.start || r.end) { r.start = p; r.end = null; r.result = null; r.error = null; drawRoute(); renderRoute(); }
+  else { r.end = p; computeRoute(); }
 }
 
 function renderStats() {
@@ -430,6 +576,14 @@ async function init() {
   map.addSource("network", { type: "geojson", data: network });
   map.addLayer({ id: "network", type: "line", source: "network",
     paint: { "line-color": "#3b6fb6", "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 2.5], "line-opacity": 0.45 } });
+  map.addSource("routes", { type: "geojson", data: EMPTY });
+  map.addLayer({ id: "route-baseline", type: "line", source: "routes", filter: ["==", ["get", "kind"], "baseline"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#e08214", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 5, 18, 12], "line-opacity": 0.75 } });
+  map.addLayer({ id: "route-accessible", type: "line", source: "routes", filter: ["==", ["get", "kind"], "accessible"],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#1f5fbf", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 3, 18, 6] } });
+  map.addSource("route-points", { type: "geojson", data: EMPTY });
   map.addSource("barriers", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({ id: "selected", type: "circle", source: "selected",
@@ -452,6 +606,15 @@ async function init() {
     select(state.all.find(f => f.properties.id === id), false);
   });
 
+  map.addLayer({ id: "route-points", type: "circle", source: "route-points", paint: {
+    "circle-radius": 9, "circle-color": ["match", ["get", "kind"], "A", "#1a7f3c", "#b3261e"],
+    "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
+  map.addLayer({ id: "route-labels", type: "symbol", source: "route-points",
+    layout: { "text-field": ["get", "kind"], "text-size": 11, "text-font": ["Noto Sans Bold"], "text-allow-overlap": true },
+    paint: { "text-color": "#fff" } });
+  map.on("click", onMapClick);
+  try { state.router = new AccessRouter(await getJSON(API.graph)); } catch (err) { console.warn("routing unavailable", err); }
+
   const saved = storageGet("accessmap.lang");
   applyLang(state.cfg.languages.includes(saved) ? saved : state.cfg.language);
   loadStats();
@@ -468,6 +631,10 @@ $("fb-reject").addEventListener("click", () => sendFeedback("reject"));
 $("close-detail").addEventListener("click", () => {
   state.selected = null; $("detail").hidden = true;
   map.getSource("selected").setData({ type: "FeatureCollection", features: [] }); refresh();
+});
+$("profile").addEventListener("change", () => { storageSet("accessmap.profile", $("profile").value); computeRoute(); });
+$("route-clear").addEventListener("click", () => {
+  Object.assign(state.route, { start: null, end: null, result: null, error: null }); drawRoute(); renderRoute();
 });
 $("sheet-toggle").addEventListener("click", () => {
   const c = $("panel").classList.toggle("collapsed");

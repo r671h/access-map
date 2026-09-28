@@ -157,6 +157,22 @@ def cmd_export_site(args) -> int:
     return 0
 
 
+def cmd_build_graph(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.routing.graph import run
+
+    print(json.dumps(run(get_settings()), indent=2))
+    return 0
+
+
+def cmd_route_demo(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.routing.demo import run
+
+    print(json.dumps(run(get_settings()), indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -206,6 +222,10 @@ def build_parser() -> argparse.ArgumentParser:
     ex = sub.add_parser("export-site", help="static site for Vercel -> site/")
     ex.add_argument("--out", default="site")
     ex.set_defaults(fn=cmd_export_site)
+    sub.add_parser("build-graph", help="walking graph + barriers -> routing_graph.json"
+                   ).set_defaults(fn=cmd_build_graph)
+    sub.add_parser("route-demo", help="10 random pairs, every profile -> reports/routing_demo.md"
+                   ).set_defaults(fn=cmd_route_demo)
     sub.add_parser("geolocate", help="place, cluster and snap detections -> barriers.geojson"
                    ).set_defaults(fn=cmd_geolocate)
     return p

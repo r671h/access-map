@@ -169,3 +169,29 @@ def test_vercel_feedback_function(tmp_path):
                        timeout=60)
     assert r.returncode == 0, r.stderr
     assert "all checks passed" in r.stdout
+
+
+def test_routing_endpoints(client, settings):
+    from test_routing import A, C, make_graph
+
+    assert client.get("/api/config").json()["routing"] is False
+    assert client.get("/api/graph").status_code == 404
+    (settings.paths.processed / "routing_graph.json").write_text(json.dumps(make_graph()),
+                                                                 encoding="utf-8")
+    assert client.get("/api/config").json()["routing"] is True
+    assert len(client.get("/api/graph").json()["edges"]) == 5
+    assert "AccessRouter" in client.get("/router.js").text
+    q = {"from": f"{A[1]},{A[0]}", "to": f"{C[1]},{C[0]}", "profile": "wheelchair"}
+    r = client.get("/api/route", params=q).json()
+    assert r["avoided"] == {"stairs": 1} and not r["same_route"]
+    # A user rejects the stairs → routing ignores them at once.
+    client.post("/api/feedback", json={"barrier_id": "stairs-1", "verdict": "reject"})
+    assert client.get("/api/route", params=q).json()["same_route"]
+    assert client.get("/api/route", params=q | {"profile": "bike"}).status_code == 422
+    assert client.get("/api/route", params=q | {"from": "nonsense"}).status_code == 422
+    # export ships the graph and the browser router
+    from accessmap.web.export import export_site
+
+    export_site(settings, settings.root / "site")
+    assert (settings.root / "site" / "data" / "graph.json").is_file()
+    assert (settings.root / "site" / "router.js").is_file()

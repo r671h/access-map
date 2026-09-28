@@ -120,3 +120,25 @@ Tuning subset, frame level vs labels (42 frames) and OSM:
    (1073455601811251), bollards (774001902184920).
 5. image_usable=true on frames blocked by rain, a wiper or night blur: 1600907968435799,
    923316520846444, 937976785374024.
+
+
+## Routing (phase 6)
+- `accessmap build-graph` → `data/processed/routing_graph.json` (316 KB): 1,055 nodes, 1,356
+  walkable edges, 190 barriers on edges = 78 detected (all snapped ones) + 75 OSM steps edges
+  + 37 OSM kerbs; 11 edges tagged `wheelchair=no`.
+- Profiles as agreed (wheelchair blocks stairs/step/raised_curb/no_sidewalk, stroller blocks
+  stairs, suitcase only penalties); max detour +50%.
+- `accessmap route-demo` (`reports/routing_demo.md`, map `reports/qa/routing_demo.png`):
+  10 pairs × 3 profiles; the accessible route differs from the shortest in 25 of 30; no
+  warnings; median 17 ms, max 68 ms per request (limit 1 s). Example: pair 1, wheelchair
+  +74 m (+11%) avoids 2 staircases and 1 rough surface.
+- Some "different" routes have +0% and no barriers either way: the profile prefers smoother
+  surfaces (surface multipliers), so an equal-length street with paving stones loses to asphalt.
+- Found and fixed while testing: snapping a click to the nearest node started wheelchair
+  routes on an underground stair-only stub at the Hauptbahnhof, producing a false "no
+  barrier-free path". Now clicks snap to the nearest edge point the profile can leave from.
+- The browser router (web/static/router.js) matched the Python router on 60 random real
+  routes (0 mismatches) and on the synthetic test cases.
+- Limits: kerbs are attached to edges, not to crossing movements, so a raised curb on one
+  side of a crossing also affects walking along that corner; elevators are not modelled
+  (OSM `highway=elevator` nodes), so stations with lifts can look inaccessible.

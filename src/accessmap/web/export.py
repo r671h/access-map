@@ -2,7 +2,8 @@
 
 site/
   index.html            frontend in static mode (<meta name="accessmap-mode" content="static">)
-  data/*.json           config, barriers, network, stats — same JSON as the local API
+  data/*.json           config, barriers, network, stats, graph — same JSON as the local API
+  router.js             in-browser router (port of accessmap.routing.router)
   photos/<frame>.jpg    frames used by barriers, resized (Mapillary, CC BY-SA 4.0)
   api/feedback.js       serverless feedback function (Neon Postgres), api/_ids.js
   package.json, vercel.json
@@ -84,6 +85,9 @@ def export_site(settings: Settings, out: Path) -> dict:
     _write_json(out / "data" / "barriers.json", {"type": "FeatureCollection",
                                                  "features": barriers})
     _write_json(out / "data" / "network.json", slim_network(data.network()))
+    if data.graph() is not None:
+        _write_json(out / "data" / "graph.json", data.graph())
+        shutil.copy(STATIC / "router.js", out / "router.js")
     stats = data.stats()
     stats.pop("feedback")
     _write_json(out / "data" / "stats.json", stats)

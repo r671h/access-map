@@ -2,7 +2,8 @@
 
 The data logic lives in `SiteData`, shared with the static export for Vercel
 (`accessmap export-site`), so the local API and the public site serve the same JSON.
-Routing (`/api/route`) is added in phase 6. Run with `accessmap serve`.
+The browser routes itself with static/router.js on /api/graph (so the Vercel site can);
+/api/route answers the same with the Python router. Run with `accessmap serve`.
 """
 
 from __future__ import annotations
@@ -99,6 +100,7 @@ class SiteData:
         self._unsnapped = _FileCache(proc / "barriers_unsnapped.geojson", EMPTY_FC)
         self._network = _FileCache(settings.paths.raw / "osm" / "walk_edges.geojson", EMPTY_FC)
         self._metrics = _FileCache(settings.paths.reports / "metrics.json", {})
+        self._graph = _FileCache(proc / "routing_graph.json", None)
         self._frames: dict = {}
 
     def config(self) -> dict:
@@ -106,7 +108,12 @@ class SiteData:
         return {"area": {"name": p.area.name, "bbox": p.area.bbox},
                 "languages": p.ui.languages, "language": p.ui.language,
                 "types": p.detection.types, "profiles": p.profiles,
-                "features": p.app.features, "routing": False}
+                "features": p.app.features, "routing": self.graph() is not None,
+                "max_detour": p.routing.max_detour}
+
+    def graph(self) -> dict | None:
+        """routing_graph.json (accessmap build-graph), or None before it exists."""
+        return self._graph.get()
 
     def frames(self) -> dict[str, dict]:
         path = self.settings.paths.processed / "frames.parquet"
@@ -163,12 +170,45 @@ class SiteData:
 def create_app(settings: Settings) -> FastAPI:
     data = SiteData(settings)
     feedback = FeedbackStore(settings.paths.data / "feedback.sqlite")
+    routers: dict = {}
 
     app = FastAPI(title="access-map", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/router.js", include_in_schema=False)
+    def router_js():
+        return FileResponse(STATIC / "router.js", media_type="text/javascript")
+
+    @app.get("/api/graph")
+    def graph():
+        g = data.graph()
+        if g is None:
+            raise HTTPException(404, "no routing graph: run `accessmap build-graph`")
+        return g
+
+    @app.get("/api/route")
+    def route(start: str = Query(..., alias="from", description="lat,lon"),
+              end: str = Query(..., alias="to", description="lat,lon"),
+              profile: str = Query("wheelchair")):
+        from accessmap.routing.router import Router, RoutingError
+
+        g = data.graph()
+        if g is None:
+            raise HTTPException(404, "no routing graph: run `accessmap build-graph`")
+        try:
+            (la, lo), (lb, lob) = ([float(x) for x in p.split(",")] for p in (start, end))
+        except ValueError:
+            raise HTTPException(422, "from/to must be 'lat,lon'") from None
+        if routers.get("graph") is not g:
+            routers.update(graph=g, router=Router(g))
+        rejected = {bid for bid, v in feedback.summary().items() if v["status"] == "rejected"}
+        try:
+            return routers["router"].route([lo, la], [lob, lb], profile, rejected)
+        except RoutingError as e:
+            raise HTTPException(422, str(e)) from None
 
     @app.get("/api/config")
     def config():
