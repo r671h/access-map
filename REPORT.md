@@ -94,3 +94,29 @@ Tuning subset, frame level vs labels (42 frames) and OSM:
 - Against OSM, v2 lost curb_ramp recall: v1 had curb_ramps 0 m and 5 m from two of the 6
   OSM lowered/flush kerbs in view; v2 has none within 12 m of any of them (nearest 12–290 m).
   The stricter "clearly visible crossing point" rule trades these for fewer false alarms.
+
+### Final prompt v3 (user choice) — full run and hold-out
+- Full run: 333/333 valid, 304 usable, 183 features (v1: 397). 183 new calls; total
+  849/1,200. Geolocation: 109 barriers (v1: 249), 78 snapped, 31 unsnapped (28%, below the
+  phase 4 limit of 30%); 10 seen from more than one image.
+- Hold-out (18 labelled frames, scored once): precision 0.43 (3 TP / 4 FP), recall 0.75,
+  image_usable 18/18 correct. Consistent with tuning (0.33 / 0.75); the sample is small.
+- All 60 labelled frames: precision 0.36, recall 0.75. Per type: rough_surface 0.60 / 1.00,
+  stairs 0.50 / 1.00, curb_ramp 0.17 / 0.33, raised_curb 0 / 0 (1 labelled instance).
+- OSM, all frames (lower bound): curb_ramp 1 TP of 32 predicted, 8 OSM kerbs in view;
+  stairs 1 of 5, 9 OSM steps in view. OSM cannot confirm most detections either way.
+- Map `reports/qa/barriers_map.png`: the rows of along-street raised_curb from v1 are gone;
+  barriers sit on the network.
+
+### Typical errors that remain (v3)
+1. rough_surface on cobbled surfaces that are not the walking route: a parking/loading lane
+   (165811579359519), a dirt tree strip (4279130162134528), a cobbled median seen from a
+   dashcam in rain (1380908117482935).
+2. curb_ramp away from crossings despite the explicit exclusion: a grass traffic island
+   (2602540939950109_right), a gateway threshold (555108905510671).
+3. Distant building-entrance stairs still reported as stairs: 1110092740012739,
+   700643409383152_back.
+4. narrow_passage on poles and bollards with enough clear width: an overhead-line pylon
+   (1073455601811251), bollards (774001902184920).
+5. image_usable=true on frames blocked by rain, a wiper or night blur: 1600907968435799,
+   923316520846444, 937976785374024.

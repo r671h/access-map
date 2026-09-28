@@ -141,9 +141,13 @@ def _dist_m(geom, lon: float, lat: float) -> float:
 
 
 def osm_metrics(barriers: list[dict], gt: list[dict], frames: list[dict],
-                holdout: bool) -> dict:
+                holdout: bool | None) -> dict:
     """Greedy one-to-one matching within MATCH_M per type. Predictions whose nearest GT
-    candidate belongs to the other split are left out of that split's precision."""
+    candidate belongs to the other split are left out of that split's precision.
+    holdout=None scores all GT objects (no split)."""
+    if holdout is None:
+        gt = [g | {"holdout": False} for g in gt]
+        holdout = False
     visible = [g for g in gt if in_view(g["geom"], frames)]
     out = {}
     for t in OSM_TYPES:
@@ -200,7 +204,8 @@ def evaluate(settings: Settings, model: str, prompt: str, final: bool = False) -
         result[split] = {
             "frames": len(ids), "frames_without_answer": len(missing),
             "labels": fm,
-            "osm": osm_metrics(snapped + unsnapped, gt, rows, holdout=split == "holdout"),
+            "osm": osm_metrics(snapped + unsnapped, gt, rows,
+                               holdout={"tuning": False, "holdout": True}.get(split)),
             "barriers": len(snapped) + len(unsnapped),
             "unsnapped_share": round(len(unsnapped) / max(1, len(snapped) + len(unsnapped)),
                                      3),

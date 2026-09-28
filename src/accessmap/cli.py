@@ -72,6 +72,7 @@ def cmd_analyze(args) -> int:
 
     settings = get_settings()
     model = args.model or settings.project.gemini.model
+    args.prompt = args.prompt or settings.project.gemini.prompt
     if not model:
         print("No model chosen yet: pass --model or set gemini.model in config/project.yaml")
         return 2
@@ -125,7 +126,8 @@ def cmd_evaluate(args) -> int:
 
     settings = get_settings()
     model = args.model or settings.project.gemini.model
-    result = evaluate(settings, model, args.prompt, final=args.final)
+    result = evaluate(settings, model, args.prompt or settings.project.gemini.prompt,
+                      final=args.final)
     print(f"saved {save(settings, result)}")
     for split in ("tuning", "holdout", "all_frames"):
         if split in result:
@@ -154,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     i.set_defaults(fn=cmd_fetch_images)
     a = sub.add_parser("analyze", help="run Gemini on frames -> data/processed/detections.jsonl")
     a.add_argument("--model")
-    a.add_argument("--prompt", default="v1")
+    a.add_argument("--prompt", help="default: gemini.prompt in config/project.yaml")
     a.add_argument("--retry-failed", action="store_true",
                    help="call again for frames whose cached outcome is 'no valid answer'")
     g = a.add_mutually_exclusive_group(required=True)
@@ -171,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
     pl.set_defaults(fn=cmd_pilot)
     e = sub.add_parser("evaluate", help="metrics vs hand labels and OSM -> reports/metrics.json")
     e.add_argument("--model")
-    e.add_argument("--prompt", default="v1")
+    e.add_argument("--prompt", help="default: gemini.prompt in config/project.yaml")
     e.add_argument("--final", action="store_true",
                    help="also score the hold-out (only for the chosen final prompt)")
     e.set_defaults(fn=cmd_evaluate)

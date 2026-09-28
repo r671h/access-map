@@ -24,6 +24,7 @@ gemini:
   prefer_free_tier: true
   rpm: 60                  # lowered in phase 0 to the key's real limit
   thinking: low            # 3.8 Flash rejects minimal
+  prompt: v3               # chosen at the phase 5 review (DECISIONS.md)
 
 budget:
   max_images: 300

@@ -72,6 +72,7 @@ class Gemini(BaseModel):
     prefer_free_tier: bool = True
     rpm: int = 60
     thinking: str = "minimal"
+    prompt: str = "v1"       # prompt version used by analyze/evaluate unless --prompt is given
 
 
 class Budget(BaseModel):
