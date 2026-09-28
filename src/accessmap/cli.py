@@ -76,7 +76,8 @@ def cmd_analyze(args) -> int:
         print("No model chosen yet: pass --model or set gemini.model in config/project.yaml")
         return 2
     ids = None if args.all else sorted(load_frames(settings).frame_id)[: args.limit]
-    stats = run(settings, model, ids, prompt_version=args.prompt)
+    stats = run(settings, model, ids, prompt_version=args.prompt,
+                retry_failed=args.retry_failed)
     print(json.dumps(stats, indent=2))
     return 0
 
@@ -133,6 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("analyze", help="run Gemini on frames -> data/processed/detections.jsonl")
     a.add_argument("--model")
     a.add_argument("--prompt", default="v1")
+    a.add_argument("--retry-failed", action="store_true",
+                   help="call again for frames whose cached outcome is 'no valid answer'")
     g = a.add_mutually_exclusive_group(required=True)
     g.add_argument("--all", action="store_true", help="all frames in the manifest")
     g.add_argument("--limit", type=int, help="first N frames (for quick tests)")

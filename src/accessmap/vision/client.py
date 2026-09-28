@@ -1,12 +1,15 @@
-"""Gemini client: cache, budget ledger, rate limit, retries, strict validation (SPEC §4)."""
+"""Gemini client: fingerprinted cache, budget ledger, rate limit, retries, strict validation
+(SPEC §4)."""
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
 import threading
 import time
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +25,7 @@ log = logging.getLogger(__name__)
 MAX_SIDE_PX = 1536
 JPEG_QUALITY = 85
 RETRY_CODES = {429, 500, 502, 503, 504}
+TEMPERATURE = 0.1
 THINKING_FALLBACK = {"MINIMAL": "LOW", "LOW": None}
 
 
@@ -85,6 +89,10 @@ class RateLimiter:
             time.sleep(delay)
 
 
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 def prepare_image(path: Path, max_side: int = MAX_SIDE_PX) -> bytes:
     with Image.open(path) as im:
         im = im.convert("RGB")
@@ -111,6 +119,12 @@ class GeminiAnalyzer:
         self.active_types = list(active_types)
         self.schema = response_model(tuple(active_types))
         self.cache_dir = cache_dir / model / prompt_version
+        self.stale_dir = cache_dir / "_stale"
+        self.schema_sha = _sha(json.dumps(self.schema.model_json_schema(),
+                                          sort_keys=True).encode())
+        self.requested_thinking = thinking_level
+        self.cache_stats: Counter = Counter()
+        self._stats_lock = threading.Lock()
         self.ledger = ledger
         self.limiter = limiter
         self.failed_log = failed_log
@@ -122,7 +136,7 @@ class GeminiAnalyzer:
     def _config(self):
         from google.genai import types
 
-        kw = dict(temperature=0.1, response_mime_type="application/json",
+        kw = dict(temperature=TEMPERATURE, response_mime_type="application/json",
                   response_schema=self.schema)
         if self.thinking_level:
             kw["thinking_config"] = types.ThinkingConfig(thinking_level=self.thinking_level)
@@ -166,19 +180,83 @@ class GeminiAnalyzer:
             e, BudgetExceeded) and (_is_retryable(e) or "thinking" in str(e).lower()),
             what=f"gemini {self.model} {frame_id}")
 
-    def analyze(self, frame: dict, root: Path) -> dict | None:
-        """Analyse one frame (manifest row as dict). Returns the cache record or None."""
-        cp = self.cache_path(frame["frame_id"])
-        if cp.is_file():
-            return json.loads(cp.read_text(encoding="utf-8"))
+    def _inputs(self, frame: dict, root: Path) -> tuple[str, Path, dict]:
+        """Rendered prompt, image path and the fingerprint of everything that shapes the answer.
 
+        The image is hashed as the source file plus the resize/JPEG settings, not the
+        re-encoded bytes, so a Pillow upgrade cannot invalidate the whole cache. The thinking
+        level is the configured one, not the runtime fallback, so a rejected MINIMAL does not
+        make every later run look stale.
+        """
         captured = frame["captured_at"]
         prompt = render(self.prompt_version, active_types=self.active_types,
                         fov_deg=float(frame["fov"]),
                         captured_at=captured.strftime("%Y-%m-%d")
                         if hasattr(captured, "strftime") else str(captured)[:10])
-        image = prepare_image(root / frame["path"])
+        image_path = root / frame["path"]
+        inputs = {
+            "model": self.model,
+            "prompt_sha": _sha(prompt.encode("utf-8")),
+            "image_sha": _sha(image_path.read_bytes()),
+            "image_prep": f"{MAX_SIDE_PX}px/q{JPEG_QUALITY}",
+            "schema_sha": self.schema_sha,
+            "thinking": self.requested_thinking,
+            "temperature": TEMPERATURE,
+        }
+        return prompt, image_path, inputs
 
+    def lookup(self, frame: dict, root: Path) -> tuple[str, dict | None, tuple]:
+        """Cache state of a frame without calling the API.
+
+        Returns (state, record, inputs): state is hit | failed | stale | miss. A record
+        written before fingerprints existed is adopted (fingerprint backfilled).
+        """
+        prompt, image_path, inputs = self._inputs(frame, root)
+        fp = _sha(json.dumps(inputs, sort_keys=True).encode())
+        cp = self.cache_path(frame["frame_id"])
+        if not cp.is_file():
+            return "miss", None, (prompt, image_path, inputs, fp)
+        rec = json.loads(cp.read_text(encoding="utf-8"))
+        if "fingerprint" not in rec:
+            rec |= {"fingerprint": fp, "inputs": inputs, "fingerprint_backfilled": True}
+            self._write(cp, rec)
+        if rec["fingerprint"] != fp:
+            return "stale", rec, (prompt, image_path, inputs, fp)
+        state = "failed" if rec.get("response") is None else "hit"
+        return state, rec, (prompt, image_path, inputs, fp)
+
+    def _write(self, cp: Path, record: dict) -> None:
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cp.with_suffix(".part")
+        tmp.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(cp)
+
+    def _retire(self, cp: Path) -> None:
+        """Move a stale record aside instead of deleting it (it was paid for)."""
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        dest = (self.stale_dir / self.model / self.prompt_version
+                / f"{cp.stem}.{stamp}.json")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        cp.replace(dest)
+        log.warning("cache for %s is stale (inputs changed); moved to %s", cp.stem, dest)
+
+    def _count(self, state: str) -> None:
+        with self._stats_lock:
+            self.cache_stats[state] += 1
+
+    def analyze(self, frame: dict, root: Path, retry_failed: bool = False) -> dict | None:
+        """Analyse one frame (manifest row as dict). Returns the cache record, or None when
+        the model gave no valid answer (that outcome is cached too, see retry_failed)."""
+        state, rec, (prompt, image_path, inputs, fp) = self.lookup(frame, root)
+        if state == "hit" or (state == "failed" and not retry_failed):
+            self._count(state)
+            return rec if state == "hit" else None
+        cp = self.cache_path(frame["frame_id"])
+        if state == "stale":
+            self._retire(cp)
+        self._count("stale" if state == "stale" else "retried" if state == "failed" else "miss")
+
+        image = prepare_image(image_path)
         last_error, usages = None, []
         for _attempt in range(2):  # one retry on invalid output
             resp, usage = self._call(image, prompt, frame["frame_id"])
@@ -190,22 +268,24 @@ class GeminiAnalyzer:
                 last_error = str(e)[:500]
                 log.warning("invalid response for %s: %s", frame["frame_id"], last_error[:120])
         else:
+            parsed = None
             with open(self.failed_log, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"frame_id": frame["frame_id"], "model": self.model,
                                     "prompt_version": self.prompt_version,
                                     "error": last_error}) + "\n")
-            return None
 
         record = {
             "frame_id": frame["frame_id"],
             "model": self.model,
             "prompt_version": self.prompt_version,
             "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "fingerprint": fp,
+            "inputs": inputs,
+            "thinking_used": self.thinking_level,
             "usage": usages,
-            "response": parsed.model_dump(mode="json"),
+            "response": parsed.model_dump(mode="json") if parsed else None,
         }
-        cp.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cp.with_suffix(".part")
-        tmp.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(cp)
-        return record
+        if parsed is None:
+            record["error"] = last_error
+        self._write(cp, record)
+        return record if parsed else None

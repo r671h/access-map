@@ -103,12 +103,64 @@ def test_invalid_then_valid_retries_once(tmp_path, frame):
     assert fake.calls == 2 and a.ledger.used == 2
 
 
-def test_invalid_twice_goes_to_failed_log(tmp_path, frame):
-    bad = GOOD | {"features": [GOOD["features"][0] | {"box_2d": [700, 0, 600, 10]}]}
-    a, fake = make(tmp_path, [bad, bad])
+BAD = GOOD | {"features": [GOOD["features"][0] | {"box_2d": [700, 0, 600, 10]}]}
+
+
+def test_invalid_twice_is_logged_and_cached_as_failed(tmp_path, frame):
+    a, fake = make(tmp_path, [BAD, BAD])
     assert a.analyze(frame, tmp_path) is None
     assert json.loads((tmp_path / "failed.jsonl").read_text())["frame_id"] == "f1"
-    assert not a.cache_path("f1").exists()
+    assert a.lookup(frame, tmp_path)[0] == "failed"
+    assert a.analyze(frame, tmp_path) is None      # no new calls on a rerun
+    assert fake.calls == 2 and a.ledger.used == 2
+
+
+def test_retry_failed_calls_again(tmp_path, frame):
+    a, fake = make(tmp_path, [BAD, BAD, GOOD])
+    a.analyze(frame, tmp_path)
+    assert a.analyze(frame, tmp_path, retry_failed=True) is not None
+    assert a.lookup(frame, tmp_path)[0] == "hit" and fake.calls == 3
+
+
+def test_changed_prompt_makes_cache_stale_and_keeps_old_record(tmp_path, frame, monkeypatch):
+    a, fake = make(tmp_path, [GOOD, GOOD])
+    a.analyze(frame, tmp_path)
+    monkeypatch.setattr(client, "render", lambda *args, **kw: "an edited prompt")
+    assert a.lookup(frame, tmp_path)[0] == "stale"
+    assert a.analyze(frame, tmp_path) is not None
+    assert fake.calls == 2 and a.cache_stats["stale"] == 1
+    assert len(list((tmp_path / "cache" / "_stale").rglob("f1.*.json"))) == 1
+    assert a.lookup(frame, tmp_path)[0] == "hit"
+
+
+def test_changed_image_or_types_invalidate(tmp_path, frame):
+    a, _ = make(tmp_path, [GOOD])
+    a.analyze(frame, tmp_path)
+    Image.new("RGB", (2048, 1536), (90, 100, 100)).save(tmp_path / "img.jpg")
+    assert a.lookup(frame, tmp_path)[0] == "stale"
+    b, _ = make(tmp_path, [])
+    b.active_types = ["curb_ramp"]
+    assert b.lookup(frame, tmp_path)[0] == "stale"
+
+
+def test_thinking_fallback_does_not_invalidate_cache(tmp_path, frame):
+    a, fake = make(tmp_path, [ValueError("Thinking level MINIMAL is not supported"), GOOD])
+    a.thinking_level = a.requested_thinking = "MINIMAL"
+    a.analyze(frame, tmp_path)
+    b, _ = make(tmp_path, [])
+    b.thinking_level = b.requested_thinking = "MINIMAL"
+    assert b.lookup(frame, tmp_path)[0] == "hit"
+
+
+def test_legacy_record_without_fingerprint_is_adopted(tmp_path, frame):
+    a, fake = make(tmp_path, [GOOD])
+    rec = a.analyze(frame, tmp_path)
+    legacy = {k: v for k, v in rec.items() if k not in ("fingerprint", "inputs")}
+    a.cache_path("f1").write_text(json.dumps(legacy), encoding="utf-8")
+    state, adopted, _ = a.lookup(frame, tmp_path)
+    assert state == "hit" and adopted["fingerprint_backfilled"]
+    assert "fingerprint" in json.loads(a.cache_path("f1").read_text())
+    assert fake.calls == 1
 
 
 def test_rate_limit_error_is_retried_and_not_billed(tmp_path, frame):

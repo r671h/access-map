@@ -90,7 +90,7 @@ def detection_rows(record: dict, frame: dict) -> dict:
 
 def run(settings: Settings, model: str, frame_ids: list[str] | None,
         prompt_version: str = DEFAULT_PROMPT, out: Path | None = None,
-        workers: int = 4) -> dict:
+        workers: int = 4, retry_failed: bool = False) -> dict:
     from tqdm import tqdm
 
     frames = load_frames(settings)
@@ -98,18 +98,21 @@ def run(settings: Settings, model: str, frame_ids: list[str] | None,
         frames = frames[frames.frame_id.isin(set(frame_ids))]
     analyzer = make_analyzer(settings, model, prompt_version)
     used_before = analyzer.ledger.used
-    to_call = sum(not analyzer.cache_path(f).is_file() for f in frames.frame_id)
+    rows = frames.to_dict("records")
+    states = Counter(analyzer.lookup(r, settings.root)[0] for r in rows)
+    to_call = states["miss"] + states["stale"] + (states["failed"] if retry_failed else 0)
     remaining = analyzer.ledger.max_calls - used_before
     if to_call > remaining:
-        raise BudgetExceeded(f"{to_call} uncached frames but only {remaining} calls left "
+        raise BudgetExceeded(f"{to_call} frames need a call but only {remaining} calls left "
                              f"({used_before}/{analyzer.ledger.max_calls} used)")
-    log.info("%s %s: %d frames, %d uncached, budget %d/%d used", model, prompt_version,
-             len(frames), to_call, used_before, analyzer.ledger.max_calls)
+    log.info("%s %s: %d frames, cache %s, %d to call, budget %d/%d used", model,
+             prompt_version, len(frames), dict(states), to_call, used_before,
+             analyzer.ledger.max_calls)
 
-    rows = frames.to_dict("records")
     results: dict[str, dict | None] = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(analyzer.analyze, row, settings.root): row["frame_id"]
+        futures = {ex.submit(analyzer.analyze, row, settings.root, retry_failed):
+                   row["frame_id"]
                    for row in rows}
         for f in tqdm(futures, desc=f"analyze {model}", unit="frame"):
             fid = futures[f]
@@ -130,8 +133,11 @@ def run(settings: Settings, model: str, frame_ids: list[str] | None,
                 f.write(json.dumps(detection_rows(results[fid], by_id[fid]),
                                    ensure_ascii=False) + "\n")
 
-    return summarize(results, model, prompt_version, analyzer.ledger.used - used_before,
-                     analyzer.ledger.used, analyzer.ledger.max_calls, len(load_frames(settings)))
+    stats = summarize(results, model, prompt_version, analyzer.ledger.used - used_before,
+                      analyzer.ledger.used, analyzer.ledger.max_calls,
+                      len(load_frames(settings)))
+    stats["cache"] = dict(analyzer.cache_stats)
+    return stats
 
 
 def summarize(results: dict, model: str, prompt_version: str, calls_this_run: int,
