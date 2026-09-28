@@ -168,6 +168,10 @@ Each feature carries the suggested tags, an instruction and a Mapillary link. To
 uv run accessmap export-site      # site/: page, JSON data, resized photos, feedback function
 npx vercel deploy site --prod
 ```
+The repository itself holds no built site, so the root `vercel.json` turns off deploys on
+`git push`; if the Vercel project is connected to GitHub, a push would otherwise replace the
+live site with an empty one. Deploy with the two commands above.
+
 Feedback on the public site needs a Postgres database: in the Vercel project open
 **Storage → Create Database → Neon**, connect it to the project, and deploy again. Without
 a database the site still works; it just hides the feedback buttons.
