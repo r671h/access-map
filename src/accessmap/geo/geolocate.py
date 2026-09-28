@@ -123,18 +123,24 @@ def write_fc(path: Path, features: list[dict]) -> None:
                                ensure_ascii=False), encoding="utf-8")
 
 
+def build_barriers(frames: list[dict], root: Path, index: NetworkIndex, curb_m: float,
+                   other_m: float) -> tuple[list[dict], list[dict], list[dict]]:
+    """detections.jsonl-style rows → (placed detections, snapped, unsnapped features)."""
+    placed = place_all(frames, root)
+    snapped, unsnapped = [], []
+    for c in cluster(placed):
+        s = index.snap(c["lon"], c["lat"], c["type"], curb_m, other_m)
+        (snapped if s else unsnapped).append(to_feature(c, s))
+    return placed, snapped, unsnapped
+
+
 def run(settings: Settings) -> dict:
     proc = settings.paths.processed
     frames = load_detections(proc / "detections.jsonl")
-    placed = place_all(frames, settings.root)
-    clusters = cluster(placed)
     index = load_index(settings)
     g = settings.project.geo
-
-    snapped, unsnapped = [], []
-    for c in clusters:
-        s = index.snap(c["lon"], c["lat"], c["type"], g.snap_curb_m, g.snap_other_m)
-        (snapped if s else unsnapped).append(to_feature(c, s))
+    placed, snapped, unsnapped = build_barriers(frames, settings.root, index, g.snap_curb_m,
+                                                g.snap_other_m)
     write_fc(proc / "barriers.geojson", snapped)
     write_fc(proc / "barriers_unsnapped.geojson", unsnapped)
 
@@ -147,7 +153,8 @@ def run(settings: Settings) -> dict:
         "detections_placed": len(placed),
         "distance_sources": dict(Counter(p["distance_source"] for p in placed)),
         "clusters_kept": len(all_feats),
-        "dropped_single_low_conf": len(placed) - sum(c["n_detections"] for c in clusters),
+        "dropped_single_low_conf": len(placed) - sum(f["properties"]["n_detections"]
+                                                      for f in snapped + unsnapped),
         "snapped": len(snapped),
         "unsnapped": len(unsnapped),
         "unsnapped_share": round(len(unsnapped) / len(all_feats), 3) if all_feats else 0.0,

@@ -64,3 +64,33 @@ Visual check of `reports/qa/pilot_compare_1..5.jpg`:
   sit on sidewalks/footways, not inside blocks. Visible leftovers: building-entrance stairs
   snapped ~10 m onto the nearest footway, and no_sidewalk points from car-park ramp frames
   near Jahnplatz (unsnapped, so they do not affect routing).
+
+
+## Evaluation and prompt tuning (phase 5)
+- OSM ground truth in view of the frames is too thin for curb metrics (8 curb_ramp,
+  1 raised_curb, 6 stairs), so per the user's choice Claude labelled 60 frames at frame
+  level (labels/frame_labels.json; 42 tuning, 18 hold-out never looked at while tuning);
+  the user spot-checked the disagreements and kept the labels. Strict labels give few
+  positives (6 rough_surface, 3 curb_ramp, 2 stairs, 1 raised_curb, 8 unusable frames):
+  dashcam imagery rarely shows curbs at crossing points clearly.
+- OSM precision is a lower bound (OSM is incomplete); OSM numbers use objects in view only.
+- All versions: gemini-3.8-flash, the same 150-frame tuning subset, min confidence 0.5.
+  User priority: precision; targets for v2: along-street raised_curb, curb_ramp away from
+  crossings, entrance steps/stairs.
+
+Tuning subset, frame level vs labels (42 frames) and OSM:
+
+| prompt | TP | FP | precision | recall | FP raised_curb | FP curb_ramp | FP step+stairs | stairs found | curb_ramp found | barriers | unsnapped | OSM curb_ramp TP/pred |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| v1 | 6 | 35 | 0.15 | 0.75 | 14 | 7 | 6 | 1/1 | 2/2 | 129 | 31% | 1/23 |
+| v2 | 6 | 11 | 0.35 | 0.75 | 0 | 4 | 2 | 0/1 | 2/2 | 56 | 23% | 0/21 |
+| v3 | 6 | 12 | 0.33 | 0.75 | 0 | 4 | 2 | 1/1 | 1/2 | 59 | 25% | 0/22 |
+
+- v1 → v2: false alarms 35 → 11 (raised_curb 14 → 0, step 3 → 0, curb_ramp 7 → 4), recall
+  unchanged. v2's "NOT stairs: … striped paving" made it miss real plaza stairs.
+- v3 = v2 + stairs fix + ~15 m curb_ramp limit: stairs recovered; curb_ramp false alarms on a
+  grass island and a doorstep came back despite the explicit exclusion. v2 vs v3 differ by
+  1–2 frames, which is within run-to-run noise at 42 labelled frames.
+- Against OSM, v2 lost curb_ramp recall: v1 had curb_ramps 0 m and 5 m from two of the 6
+  OSM lowered/flush kerbs in view; v2 has none within 12 m of any of them (nearest 12–290 m).
+  The stricter "clearly visible crossing point" rule trades these for fewer false alarms.

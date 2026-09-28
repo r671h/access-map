@@ -75,8 +75,15 @@ def cmd_analyze(args) -> int:
     if not model:
         print("No model chosen yet: pass --model or set gemini.model in config/project.yaml")
         return 2
-    ids = None if args.all else sorted(load_frames(settings).frame_id)[: args.limit]
-    stats = run(settings, model, ids, prompt_version=args.prompt,
+    out = None
+    if args.subset:
+        from accessmap.eval.labels import load_selection
+
+        ids = load_selection(settings.root)[f"{args.subset}_subset"]
+        out = settings.paths.processed / "runs" / f"{model}_{args.prompt}_{args.subset}.jsonl"
+    else:
+        ids = None if args.all else sorted(load_frames(settings).frame_id)[: args.limit]
+    stats = run(settings, model, ids, prompt_version=args.prompt, out=out,
                 retry_failed=args.retry_failed)
     print(json.dumps(stats, indent=2))
     return 0
@@ -112,6 +119,20 @@ def cmd_geolocate(args) -> int:
     return 0
 
 
+def cmd_evaluate(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.eval.evaluate import evaluate, markdown_table, save
+
+    settings = get_settings()
+    model = args.model or settings.project.gemini.model
+    result = evaluate(settings, model, args.prompt, final=args.final)
+    print(f"saved {save(settings, result)}")
+    for split in ("tuning", "holdout", "all_frames"):
+        if split in result:
+            print(markdown_table(result, split) + "\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -139,12 +160,21 @@ def build_parser() -> argparse.ArgumentParser:
     g = a.add_mutually_exclusive_group(required=True)
     g.add_argument("--all", action="store_true", help="all frames in the manifest")
     g.add_argument("--limit", type=int, help="first N frames (for quick tests)")
+    g.add_argument("--subset", choices=["tuning"],
+                   help="phase 5 prompt-tuning subset (labels/selection.json); writes to "
+                        "data/processed/runs/ instead of detections.jsonl")
     a.set_defaults(fn=cmd_analyze)
     pl = sub.add_parser("pilot", help="same N frames on each pilot model + comparison sheets")
     pl.add_argument("--models", nargs="+")
     pl.add_argument("-n", type=int, default=30)
     pl.add_argument("--prompt", default="v1")
     pl.set_defaults(fn=cmd_pilot)
+    e = sub.add_parser("evaluate", help="metrics vs hand labels and OSM -> reports/metrics.json")
+    e.add_argument("--model")
+    e.add_argument("--prompt", default="v1")
+    e.add_argument("--final", action="store_true",
+                   help="also score the hold-out (only for the chosen final prompt)")
+    e.set_defaults(fn=cmd_evaluate)
     sub.add_parser("geolocate", help="place, cluster and snap detections -> barriers.geojson"
                    ).set_defaults(fn=cmd_geolocate)
     return p

@@ -1,0 +1,339 @@
+{
+ "labeller": "Claude (claude-opus-5-5), 2026-09-28; frames viewed without model output",
+ "criteria": {
+  "usable": "false if blurry, dark, indoors, blocked, or no pedestrian space",
+  "curb_ramp": "lowered/flush curb at a crossing or driveway, within ~25 m, clearly visible",
+  "raised_curb": "non-lowered curb at a crossing point or corner; ordinary along-street curbs do NOT count",
+  "step": "single step interrupting a sidewalk or path; building-entrance steps do NOT count",
+  "stairs": "staircase on a pedestrian route; stairs into a building do NOT count",
+  "narrow_passage": "permanent obstacle leaving < ~1 m clear width",
+  "rough_surface": "setts/cobblestones/gravel/broken pavement on the walking surface",
+  "no_sidewalk": "pedestrians would have to walk on the roadway",
+  "unclear": "anything not clearly judgeable is labelled absent (see notes)"
+ },
+ "frames": {
+  "103210908784508": {
+   "usable": true,
+   "present": [
+    "rough_surface"
+   ],
+   "notes": "sett sidewalk on the right; curb along the street only"
+  },
+  "1059045966991139": {
+   "usable": true,
+   "present": [],
+   "notes": "Jahnplatz roundabout in rain; crossing curbs too far to judge"
+  },
+  "1073455601811251": {
+   "usable": true,
+   "present": [],
+   "notes": "rain, mirror at left; sett strip is a median/parking area, not pedestrian"
+  },
+  "1073804450753342_left": {
+   "usable": true,
+   "present": [],
+   "notes": "sidewalk in front of a garage facade"
+  },
+  "1079223004011273": {
+   "usable": true,
+   "present": [],
+   "notes": "street with sidewalks, along-street curbs only"
+  },
+  "1106563437522582": {
+   "usable": true,
+   "present": [],
+   "notes": "junction ahead; corner curbs not clearly visible"
+  },
+  "1110092740012739": {
+   "usable": true,
+   "present": [],
+   "notes": "entrance stairs on the plaza lead into a building (not a route barrier)"
+  },
+  "1110553065251552": {
+   "usable": false,
+   "present": [],
+   "notes": "mirror blocks most of the view"
+  },
+  "1132545215402388": {
+   "usable": false,
+   "present": [],
+   "notes": "indoor car park"
+  },
+  "1155060815480820": {
+   "usable": true,
+   "present": [],
+   "notes": "junction corners > 25 m away"
+  },
+  "1239849600954871": {
+   "usable": true,
+   "present": [],
+   "notes": "construction on the right is temporary"
+  },
+  "124079189963281": {
+   "usable": true,
+   "present": [],
+   "notes": "pedestrian area, even paving"
+  },
+  "1283287856477124_back": {
+   "usable": true,
+   "present": [],
+   "notes": "arterial road, sidewalk far"
+  },
+  "1296706351936028": {
+   "usable": true,
+   "present": [],
+   "notes": "construction fence temporary"
+  },
+  "1380908117482935": {
+   "usable": true,
+   "present": [],
+   "notes": "rain, cable in view; along-street curbs only"
+  },
+  "1452956199292597": {
+   "usable": true,
+   "present": [],
+   "notes": "shop entrance step is off the route"
+  },
+  "1466913857005753": {
+   "usable": true,
+   "present": [
+    "raised_curb",
+    "rough_surface"
+   ],
+   "notes": "zebra meets a non-lowered granite corner curb on the right; sett corner"
+  },
+  "1469521990937014": {
+   "usable": true,
+   "present": [],
+   "notes": "yellow ramp and barriers are temporary"
+  },
+  "1489076599042003": {
+   "usable": true,
+   "present": [],
+   "notes": "junction ahead; curbs not clearly visible"
+  },
+  "1572555534666182": {
+   "usable": false,
+   "present": [],
+   "notes": "indoor car park"
+  },
+  "158803236424359": {
+   "usable": true,
+   "present": [
+    "rough_surface"
+   ],
+   "notes": "granite sett sidewalk on the right; planters leave > 1 m"
+  },
+  "1600907968435799": {
+   "usable": false,
+   "present": [],
+   "notes": "rain-smeared and blurred, dashboard reflection"
+  },
+  "165811579359519": {
+   "usable": true,
+   "present": [],
+   "notes": "cobble strip is a parking/loading lane; the sidewalk itself is smooth (borderline)"
+  },
+  "1810889416011959": {
+   "usable": true,
+   "present": [],
+   "notes": "sun glare but visible; nothing on the sidewalk"
+  },
+  "1842155009988527": {
+   "usable": true,
+   "present": [],
+   "notes": "street with sidewalks, along-street curbs only"
+  },
+  "1941696039981933": {
+   "usable": true,
+   "present": [],
+   "notes": "junction; far corners not judgeable; barriers temporary"
+  },
+  "1948529889228840": {
+   "usable": true,
+   "present": [
+    "rough_surface"
+   ],
+   "notes": "sett-paved sidewalk/parking area on the right (borderline)"
+  },
+  "2009939862878835": {
+   "usable": true,
+   "present": [],
+   "notes": "residential street"
+  },
+  "2146107692522211": {
+   "usable": true,
+   "present": [],
+   "notes": "junction; far corners not judgeable"
+  },
+  "226363039443994": {
+   "usable": true,
+   "present": [],
+   "notes": "wide paved area near the station; bins are movable"
+  },
+  "2305537486564316": {
+   "usable": true,
+   "present": [],
+   "notes": "bollards leave > 1 m; construction temporary"
+  },
+  "24588034884190953": {
+   "usable": true,
+   "present": [],
+   "notes": "junction ahead; curbs not clearly visible"
+  },
+  "2602540939950109_right": {
+   "usable": true,
+   "present": [],
+   "notes": "traffic island corner; crossing too far"
+  },
+  "3073528866214750": {
+   "usable": true,
+   "present": [
+    "rough_surface"
+   ],
+   "notes": "sett sidewalks on both sides"
+  },
+  "3376721289174797": {
+   "usable": false,
+   "present": [],
+   "notes": "car park ramp, windshield blocked"
+  },
+  "355777836597149": {
+   "usable": true,
+   "present": [],
+   "notes": "clinker-paved sidewalk, along-street curb"
+  },
+  "395427706032803": {
+   "usable": true,
+   "present": [],
+   "notes": "motion blur; entrance stairs off the route; island curb not judgeable"
+  },
+  "398497855229028": {
+   "usable": true,
+   "present": [
+    "rough_surface"
+   ],
+   "notes": "cobblestone corner area with bollards (> 1 m gaps)"
+  },
+  "4279130162134528": {
+   "usable": true,
+   "present": [],
+   "notes": "unpaved tree strip is not the walking surface (borderline)"
+  },
+  "4460851747459570": {
+   "usable": false,
+   "present": [],
+   "notes": "rooftop car park, wiper blocks view"
+  },
+  "529991995568310": {
+   "usable": true,
+   "present": [],
+   "notes": "motion blur; smooth sidewalk"
+  },
+  "555108905510671": {
+   "usable": true,
+   "present": [],
+   "notes": "gateway with bins (movable)"
+  },
+  "563312018254307": {
+   "usable": true,
+   "present": [],
+   "notes": "pedestrian zone; construction fence temporary"
+  },
+  "615046556323854": {
+   "usable": true,
+   "present": [],
+   "notes": "wide smooth sidewalk"
+  },
+  "672943567016629": {
+   "usable": true,
+   "present": [],
+   "notes": "curbs along the road; path junction not clearly lowered"
+  },
+  "675678078766997": {
+   "usable": true,
+   "present": [],
+   "notes": "parked cars, construction temporary"
+  },
+  "690512170557346_forward": {
+   "usable": true,
+   "present": [
+    "curb_ramp"
+   ],
+   "notes": "lowered curb with tactile paving at the signalised crossing"
+  },
+  "700643409383152_back": {
+   "usable": true,
+   "present": [],
+   "notes": "plaza, even paving"
+  },
+  "700643409383152_left": {
+   "usable": true,
+   "present": [
+    "stairs"
+   ],
+   "notes": "wide stairs down to the lower plaza"
+  },
+  "731413022043880": {
+   "usable": true,
+   "present": [],
+   "notes": "residential street"
+  },
+  "774001902184920": {
+   "usable": true,
+   "present": [],
+   "notes": "bollards leave > 1 m; zebra end not judgeable"
+  },
+  "799505821205296": {
+   "usable": true,
+   "present": [],
+   "notes": "along-street curb only"
+  },
+  "837482352043275": {
+   "usable": true,
+   "present": [],
+   "notes": "junction corners not clearly visible"
+  },
+  "860144491298024": {
+   "usable": true,
+   "present": [
+    "curb_ramp"
+   ],
+   "notes": "flush crossing with tactile paving at Jahnplatz"
+  },
+  "917924126304460": {
+   "usable": true,
+   "present": [],
+   "notes": "residential street"
+  },
+  "923316520846444": {
+   "usable": false,
+   "present": [],
+   "notes": "wiper blocks view, rain"
+  },
+  "937976785374024": {
+   "usable": false,
+   "present": [],
+   "notes": "night, motion blur"
+  },
+  "981016365963437": {
+   "usable": true,
+   "present": [
+    "curb_ramp"
+   ],
+   "notes": "flush crossing with tactile paving at Jahnplatz"
+  },
+  "992023466152160_left": {
+   "usable": true,
+   "present": [
+    "stairs"
+   ],
+   "notes": "stairs down to the lower plaza"
+  },
+  "992023466152160_right": {
+   "usable": true,
+   "present": [],
+   "notes": "raised plaza edge behind a railing, not on the route"
+  }
+ }
+}
