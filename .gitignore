@@ -44,5 +44,15 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Local Claude Code settings (shared .claude/settings.json stays tracked)
-.claude/settings.local.json
+# Claude Code workflow files, planning docs and generated reports: local only
+# (removed from the repo and its history on 2026-09-28 at the user's request)
+.claude/
+CLAUDE.md
+PROMPTS.md
+start.sh
+BLOCKERS.md
+PROGRESS.md
+DECISIONS.md
+SETUP.md
+docs/
+reports/
