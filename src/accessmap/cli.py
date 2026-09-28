@@ -153,6 +153,29 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_export_osm(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.osm.suggestions import run
+
+    print(json.dumps(run(get_settings()), indent=2))
+    return 0
+
+
+def cmd_build_demo(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.demo import build_fixtures
+
+    print(json.dumps(build_fixtures(get_settings()), indent=2))
+    return 0
+
+
+def cmd_demo(args) -> int:
+    from accessmap.demo import serve
+
+    serve(host=args.host, port=args.port)
+    return 0
+
+
 def cmd_export_site(args) -> int:
     from accessmap.config import get_settings
     from accessmap.web.export import export_site
@@ -228,6 +251,16 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     sv.set_defaults(fn=cmd_serve)
+    eo = sub.add_parser("export-osm", help="suggested OSM tags (never edits OSM) -> "
+                                           "data/processed/osm_suggestions.geojson")
+    eo.set_defaults(fn=cmd_export_osm)
+    dm = sub.add_parser("demo", help="offline demo on tests/fixtures/demo (no keys needed)")
+    dm.add_argument("--host", default="127.0.0.1")
+    dm.add_argument("--port", type=int, default=8000)
+    dm.set_defaults(fn=cmd_demo)
+    bd = sub.add_parser("build-demo", help="(maintainers) cut the demo fixture out of the "
+                                           "pipeline results -> tests/fixtures/demo/")
+    bd.set_defaults(fn=cmd_build_demo)
     ex = sub.add_parser("export-site", help="static site for Vercel -> site/")
     ex.add_argument("--out", default="site")
     ex.set_defaults(fn=cmd_export_site)

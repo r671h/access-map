@@ -142,3 +142,112 @@ Tuning subset, frame level vs labels (42 frames) and OSM:
 - Limits: kerbs are attached to edges, not to crossing movements, so a raised curb on one
   side of a crossing also affects walking along that corner; elevators are not modelled
   (OSM `highway=elevator` nodes), so stations with lifts can look inaccessible.
+
+
+## Local vision model test (user request, 2026-09-28)
+- Setup: Ollama + `qwen3-vl:8b-instruct` (Q4_K_M, 6.1 GB) on an RTX 5060 8 GB, same prompt v3,
+  schema and cache as Gemini (`analyze --model ollama:<tag>`).
+- Speed: with an 8k context, 20% of the model spilled onto the CPU (157 s/frame). A 4k context
+  and a cap of 8 features / 1,500 output tokens brought it to 16–24 s/frame. The first answer
+  had looped: 26 copies of one curb, each box shifted a few pixels.
+- Quality, stopped at 76/150 tuning frames: on the 14 labelled frames both models answered,
+  13 false alarms against Gemini's 1 (precision 0.07 vs 0.50). It reported along-street curbs
+  despite v3's rule, invented obstacles on an empty night-time pavement, gave every detection
+  confidence 0.95, and placed many boxes wrongly (on a facade, in the sky).
+  Sheets: `reports/qa/local_vs_gemini_partial_*.jpg`.
+- Decision (user): stay with Gemini. The backend stays as an option; a larger model
+  (Qwen3-VL 30B-A3B, needs ~32 GB RAM) would be the fairer next test.
+
+## Web app (phase 7)
+- Map page: barrier layer (colour = type, size = confidence, faded = not on the network),
+  filters, list, detail panel with the photo and detection box, confirm/reject feedback,
+  profile selector, two-click routing, shortest vs accessible comparison. EN/DE.
+- Statistics page (`/stats.html`, also on the static site): barriers per type on/off the
+  network, per-type accuracy on all 60 labelled frames with raw counts, the hold-out headline,
+  user feedback, and a method note.
+- All endpoints curl-checked (200 with data; 404 for unknown frames and barriers; 422 for bad
+  input). Screenshots `reports/qa/ui_phase7_*.png`: desktop and 390 px, EN and DE, no console
+  errors, no horizontal scrolling.
+
+## Export and demo (phase 8)
+- `accessmap export-osm` → `data/processed/osm_suggestions.geojson`: 5 suggestions, all
+  `kerb=lowered`, from 109 barriers. Skipped: 63 with no clear OSM tag (rough surface, narrow
+  passage, no sidewalk), 13 below confidence 0.8, 27 seen in only one photo, and 1 staircase
+  13 m from mapped OSM steps (same stairs, so not suggested; the steps radius is 20 m).
+  3 of the 5 are 65–265 m from any mapped kerb; one is 15 m from one, likely the unmapped
+  other side of a crossing.
+- `accessmap demo`: a ~500 m excerpt north of Jahnplatz in `tests/fixtures/demo/` (2.2 MB:
+  43 barriers, 51 downscaled photos, 357-edge routing graph, the real run's metrics). It was
+  run with `GEMINI_API_KEY` and `MAPILLARY_TOKEN` unset: map, photos, routes and stats work
+  (`reports/qa/ui_phase8_demo.png`). Offline tests cover it.
+
+## Final numbers
+| | |
+|---|---|
+| Area | Bielefeld centre core, 0.92 km², 36 km of walking network |
+| Frames analysed | 333 (300 Mapillary images incl. 11 panoramas), 2021-07 to 2026-08 |
+| Barriers | 109 (78 on the walking network, 10 seen in 2+ photos) |
+| Precision / recall, hold-out (18 frames) | 0.43 / 0.75 |
+| Precision / recall, all 60 labelled frames | 0.36 / 0.75 |
+| Routing | accessible ≠ shortest in 25 of 30 demo routes; ≤ 68 ms per request |
+| OSM suggestions | 5 lowered curbs not in OSM |
+| Gemini calls | 849 of 1,200 budget (≈ $0.0025 per frame on the paid tier; the free tier was used) |
+| Local model test | 76 frames, no API cost, not adopted |
+
+## Spec self-check (docs/SPEC.md, section by section)
+- §1 Goal, profiles: done; wheelchair, stroller, suitcase (config/profiles.yaml).
+- §2 Area: done; coverage reported before fetching; the area was shrunk to the core at the
+  phase 0 review, as the user decided.
+- §3.1 OSM: done; walking network with the listed tags; Overpass kerbs, steps, barriers.
+- §3.2 Mapillary: done; 0.005° tiles, paging, `computed_*` preferred, download right after the
+  metadata fetch.
+- §3.3 Frame selection: done, with additions: frames from motorway/trunk roads, images whose
+  raw and corrected positions differ by more than 15 m, and misoriented panoramas are dropped
+  (DECISIONS.md).
+- §3.4 Panoramas: done; 4 × 90° crops at 768 px (larger crops add no detail from a 2048 px
+  panorama); FOV from camera parameters, 70° fallback.
+- §3.5 Own photos: not chosen at kickoff; not built.
+- §4 Gemini: done. Changes: 4 worker threads instead of up to 8 (the key's real limit is
+  60 RPM); the cache key is a fingerprint of model, prompt, schema, image and settings
+  (stale answers are kept, not deleted); descriptions are returned in EN and DE in one call.
+- §5 Taxonomy: 8 permanent types active. `construction` and `parked_vehicle` were not chosen,
+  so temporary barriers do not occur.
+- §6 Placement: done. Changed: bearing uses the pinhole model instead of the linear
+  approximation (up to 4° more accurate). DBSCAN at 6 m, confidence cap 0.97, snapping at
+  12/10 m, unsnapped barriers kept in a separate layer.
+- §7 Evaluation: done, with a change the user approved: OSM had only 15 observable ground
+  truth objects, so 60 frames were hand-labelled (42 tuning, 18 hold-out). OSM metrics are
+  still reported as a lower bound. Three prompt versions were tried; v3 was chosen and scored
+  once on the hold-out. The contact sheets are in reports/qa.
+- §8 Routing: done; forbid threshold 0.6 with a fallback penalty, OSM steps, kerbs and
+  `wheelchair=no`, OSM surfaces as multipliers, baseline + accessible route with stats and
+  warnings. Simplified: kerbs act on whole edges, and elevators are not modelled.
+- §9 Web app: done; all listed endpoints plus /api/graph, /api/frames, /stats.html. Rejected
+  barriers leave routing immediately, both in the Python router and in the browser.
+- §10 OSM export: done (above); never edits OSM; how to use it is in the README.
+- §11 Offline demo: done (above). The server needs no network; the browser still fetches
+  MapLibre and the base map, so it is not fully offline in a browser without internet.
+- §12 Non-functional: timeouts, retries and backoff on all external calls; idempotent stages;
+  logging with tqdm; tests offline (124 pass); ruff clean. `make` is missing on this Windows
+  machine; the same commands work through `uv run accessmap …`.
+
+## Known limitations
+- Detection precision is modest (about 4 in 10 on held-out frames). Curb ramps are the weakest
+  type (0.17 precision, 0.33 recall on all labelled frames). Most imagery is dashcam footage,
+  where curbs at crossings are small or far away.
+- Evaluation samples are small: 18 hold-out frames, and 1–9 labelled examples per type.
+- Only 10 of 109 barriers were seen in more than one photo, which limits cross-checking and
+  the OSM export (min 2 views).
+- Kerbs block whole street segments instead of crossing movements; elevators are not modelled.
+- The photos are up to 6 years old.
+
+## Next steps (proposed)
+1. **More views per barrier:** raise the image budget along the main walking routes (or add
+   own photos) so more barriers are confirmed by 2+ photos. That improves precision through
+   clustering and feeds the OSM export.
+2. **Model curbs at crossings:** attach curb ramps and raised curbs to crossing movements
+   instead of whole edges, and add elevators (`highway=elevator`) so stations are routed
+   correctly.
+3. **Use the feedback:** feed confirmed and rejected barriers back as labelled examples,
+   report precision from real users on the stats page, and use disputed ones to tune the
+   next prompt.

@@ -1,0 +1,64 @@
+# Demo project (accessmap build-demo): an excerpt of the real run. Serve it with
+# `accessmap demo`; no keys and no pipeline run needed.
+goal: real_users
+autonomy: checkpoints
+area:
+  name: 'Demo: Bielefeld, north of Jahnplatz (excerpt)'
+  bbox:
+  - 8.5305
+  - 52.0255
+  - 8.5378
+  - 52.03
+  confirmed: true
+profiles:
+- wheelchair
+- stroller
+- suitcase
+ui:
+  languages:
+  - en
+  - de
+  language: en
+gemini:
+  model: gemini-3.8-flash
+  pilot_candidates:
+  - gemini-3.8-flash
+  - gemini-3.1-flash-lite
+  prefer_free_tier: true
+  rpm: 60
+  thinking: low
+  prompt: v3
+budget:
+  max_images: 300
+  max_gemini_calls: 1200
+imagery:
+  sources:
+  - mapillary
+  max_age_years: 6
+  pano_crops: 4
+detection:
+  types:
+  - curb_ramp
+  - raised_curb
+  - step
+  - stairs
+  - narrow_passage
+  - steep_slope
+  - rough_surface
+  - no_sidewalk
+  preference: precision
+geo:
+  snap_curb_m: 12
+  snap_other_m: 10
+routing:
+  max_detour: 0.5
+  temporary_barriers: ignore
+app:
+  features:
+  - map_routes
+  - feedback
+  - osm_export
+  - stats_page
+  layout: side_panel
+  basemap: light
+  run_mode: docker

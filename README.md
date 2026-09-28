@@ -19,6 +19,8 @@ On the map you can:
   affecting routes immediately.
 - **Switch language:** the interface and the barrier descriptions are available in
   English and German.
+- **Check the numbers:** a statistics page shows barriers per type, how many are attached
+  to the walking network, and how often the model is right for each type.
 
 ![A detected staircase with its source photo and detection box](assets/screenshot-barrier.jpg)
 
@@ -89,13 +91,25 @@ cp .env.example .env         # then fill in GEMINI_API_KEY and MAPILLARY_TOKEN
 uv run accessmap check       # verifies both keys and the Overpass API
 ```
 
-> The collected data (photos, Gemini answers, OSM graph) is not in the repository. A fresh
-> clone has to run the pipeline below once before the app has anything to show.
+### Try it without keys
+
+```bash
+uv run accessmap demo        # or: make demo  →  http://127.0.0.1:8000
+```
+
+The demo serves a ~500 m excerpt of the Bielefeld results bundled in `tests/fixtures/demo/`:
+43 barriers, their 51 photos, and a routing graph. It needs no keys and no pipeline run.
+The server makes no network calls; the browser still loads MapLibre and the base map online.
+Feedback given in the demo lives in a temporary folder that is removed when you stop it.
+
+> The full data (photos, Gemini answers, OSM graph) is not in the repository. To map the
+> whole area, or your own, run the pipeline below once.
 
 ### Pipeline
 
 Every step is its own command, and every step is idempotent: reruns skip work that is
-already done. On Linux/macOS/WSL, `make <step>` does the same as `uv run accessmap <step>`.
+already done. On Linux/macOS/WSL, `make <step>` does the same as `uv run accessmap <step>`,
+and `make pipeline` runs fetch-osm → fetch-images → analyze → geolocate → evaluate → build-graph.
 
 | Command | What it does |
 |---|---|
@@ -107,11 +121,32 @@ already done. On Linux/macOS/WSL, `make <step>` does the same as `uv run accessm
 | `accessmap evaluate` | metrics against the hand labels and OSM |
 | `accessmap build-graph` | walking graph + barriers → `routing_graph.json` |
 | `accessmap route-demo` | 10 random pairs × every profile → `reports/routing_demo.md` |
-| `accessmap serve` | web app on http://127.0.0.1:8000 |
+| `accessmap export-osm` | suggested OSM tags for mappers → `data/processed/osm_suggestions.geojson` |
+| `accessmap serve` | web app on http://127.0.0.1:8000 (statistics at `/stats.html`) |
 | `accessmap export-site` | static site for Vercel → `site/` |
+| `accessmap demo` | offline demo on `tests/fixtures/demo/` |
+| `accessmap build-demo` | (maintainers) cut a new demo excerpt from the pipeline results |
 
 Useful options: `analyze --prompt v3`, `analyze --retry-failed`, `evaluate --final`,
-`serve --host 0.0.0.0 --port 8000`.
+`serve --host 0.0.0.0 --port 8000`. Only a full run (`analyze --all`) of the configured model
+and prompt writes the live `detections.jsonl`; test runs (`--limit`, `--subset tuning`, other
+models or prompts) go to `data/processed/runs/`.
+
+### Suggesting fixes to OpenStreetMap
+access-map never edits OpenStreetMap. `accessmap export-osm` writes the barriers worth a
+mapper's look to `data/processed/osm_suggestions.geojson`. That means barriers that are
+permanent, have confidence ≥ 0.8, were seen in at least 2 photos, have a clear OSM tag
+(`kerb=lowered`, `kerb=raised`, `highway=steps`), and are not mapped yet: no kerb node
+within 10 m, no steps within 20 m. For Bielefeld that is 5 lowered curbs.
+
+Each feature carries the suggested tags, an instruction and a Mapillary link. To use it:
+1. Open each point together with its Mapillary photo and check that the barrier is really
+   there. Detections are automatic and can be wrong.
+2. Map it by hand in iD or JOSM, citing Mapillary as the source.
+3. For more than a handful, create a [MapRoulette](https://maproulette.org) challenge and
+   upload the file as its GeoJSON source (one task per feature). Follow the OSM
+   [Automated Edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_Edits_code_of_conduct):
+   every change is checked and made by a person.
 
 ### Configuration
 - `config/project.yaml`: the area (bbox), budget (`max_images`, `max_gemini_calls`), Gemini
@@ -122,6 +157,11 @@ Useful options: `analyze --prompt v3`, `analyze --retry-failed`, `evaluate --fin
   multipliers.
 - `src/accessmap/vision/prompts/`: prompt versions. The version is part of the cache key,
   so a new prompt never reuses the old answers.
+- Local vision model (experimental): `analyze --model ollama:<tag>` runs the same prompt and
+  schema on a model served by [Ollama](https://ollama.com), without API costs (settings under
+  `local:` in `project.yaml`). Tested with Qwen3-VL 8B on an 8 GB GPU (about 20 s per frame).
+  It produced far more false alarms than Gemini and constant confidence scores, so the
+  published results use Gemini.
 
 ### Deploying to Vercel
 ```bash
@@ -149,8 +189,10 @@ src/accessmap/
   geo/             detection → coordinate, clustering, snapping to the network
   eval/            metrics, labels, contact sheets
   routing/         routing graph, Python router, demo
-  web/             FastAPI app, static frontend (MapLibre + router.js), Vercel export
+  web/             FastAPI app, static frontend (map + stats page, router.js), Vercel export
+  demo.py          offline demo: build and serve the bundled excerpt
 tests/             offline tests (pytest; one Node test for the Vercel function)
+  fixtures/demo/   demo excerpt: barriers, photos, network, routing graph
 ```
 
 ## Limitations
@@ -168,6 +210,7 @@ tests/             offline tests (pytest; one Node test for the Vercel function)
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL);
   base map tiles by [OpenFreeMap](https://openfreemap.org) / OpenMapTiles.
 - Street-level photos © [Mapillary](https://www.mapillary.com) contributors (CC BY-SA 4.0),
-  shown resized with their detection boxes.
+  shown resized with their detection boxes; the demo bundles 51 of them, downscaled
+  (`tests/fixtures/demo/photos/ATTRIBUTION.md`).
 - Barrier detection by Google Gemini (`gemini-3.8-flash`).
 - No licence has been chosen for the code yet.
