@@ -75,6 +75,13 @@ class Gemini(BaseModel):
     prompt: str = "v1"       # prompt version used by analyze/evaluate unless --prompt is given
 
 
+class Local(BaseModel):
+    """Local vision model served by Ollama (`analyze --model ollama:<tag>`)."""
+    host: str = "http://127.0.0.1:11434"
+    model: str = "ollama:qwen3-vl:8b-instruct"
+    timeout_s: float = 600
+
+
 class Budget(BaseModel):
     max_images: int = 800
     max_gemini_calls: int = 4000
@@ -123,6 +130,7 @@ class ProjectConfig(BaseModel):
     profiles: list[str] = ["wheelchair", "stroller", "suitcase"]
     ui: UI = Field(default_factory=UI)
     gemini: Gemini = Field(default_factory=Gemini)
+    local: Local = Field(default_factory=Local)
     budget: Budget = Field(default_factory=Budget)
     imagery: Imagery = Field(default_factory=Imagery)
     detection: Detection = Field(default_factory=Detection)

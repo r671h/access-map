@@ -38,7 +38,9 @@ HOLDOUT_SHARE = 0.3
 def load_records(settings: Settings, model: str, prompt: str, frame_ids: list[str]
                  ) -> dict[str, dict | None]:
     """Cached Gemini records; None for frames with no (valid) answer yet."""
-    base = settings.paths.cache / "gemini" / model / prompt
+    from accessmap.vision.client import model_dir
+
+    base = settings.paths.cache / "gemini" / model_dir(model) / prompt
     out = {}
     for fid in frame_ids:
         p = base / f"{fid}.json"

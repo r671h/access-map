@@ -16,7 +16,10 @@ from accessmap.vision.client import (
     BudgetExceeded,
     CallLedger,
     GeminiAnalyzer,
+    LocalAnalyzer,
     RateLimiter,
+    is_local,
+    model_dir,
 )
 
 log = logging.getLogger(__name__)
@@ -56,6 +59,18 @@ def pilot_frame_ids(frames: pd.DataFrame, n: int = 30, seed: int = PILOT_SEED) -
 
 
 def make_analyzer(settings: Settings, model: str, prompt_version: str) -> GeminiAnalyzer:
+    if is_local(model):
+        return LocalAnalyzer(
+            host=settings.project.local.host,
+            timeout_s=settings.project.local.timeout_s,
+            model=model,
+            prompt_version=prompt_version,
+            active_types=settings.project.detection.types,
+            cache_dir=settings.paths.cache / "gemini",
+            ledger=CallLedger(settings.paths.cache / "local_calls.jsonl", 10**9),
+            limiter=RateLimiter(6000),
+            failed_log=settings.paths.cache / "failed.jsonl",
+        )
     from google import genai
 
     key = settings.secrets.gemini_api_key
@@ -110,6 +125,8 @@ def run(settings: Settings, model: str, frame_ids: list[str] | None,
              analyzer.ledger.max_calls)
 
     results: dict[str, dict | None] = {}
+    if is_local(model):
+        workers = 1  # one GPU: parallel requests would only queue up and hit the timeout
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(analyzer.analyze, row, settings.root, retry_failed):
                    row["frame_id"]
@@ -152,6 +169,7 @@ def summarize(results: dict, model: str, prompt_version: str, calls_this_run: in
         return sum(vals) / len(vals) if vals else 0.0
 
     tokens_in, tokens_out = mean("prompt_tokens"), mean("output_tokens") + mean("thinking_tokens")
+    seconds = mean("seconds")
     price_in, price_out = PRICES.get(model, (0.0, 0.0))
     per_call = (tokens_in * price_in + tokens_out * price_out) / 1e6
     return {
@@ -167,6 +185,7 @@ def summarize(results: dict, model: str, prompt_version: str, calls_this_run: in
         if feats else None,
         "tokens_per_call": {"input": round(tokens_in), "output_incl_thinking": round(tokens_out)},
         "usd_per_call_paid": round(per_call, 5),
+        "seconds_per_call": round(seconds, 1) if seconds else None,
         "projected_usd_all_frames_paid": round(per_call * n_all_frames, 2),
         "calls_this_run": calls_this_run,
         "calls_used_total": calls_total,
@@ -175,7 +194,8 @@ def summarize(results: dict, model: str, prompt_version: str, calls_this_run: in
 
 
 def compare_sheets(settings: Settings, models: list[str], frame_ids: list[str],
-                   prompt_version: str = DEFAULT_PROMPT, per_sheet: int = 6) -> list[Path]:
+                   prompt_version: str = DEFAULT_PROMPT, per_sheet: int = 6,
+                   name: str = "pilot_compare", title: str = "Pilot") -> list[Path]:
     """Side-by-side sheets: each row = one frame, one tile per model, boxes drawn."""
     from accessmap.eval.contact import Box, Tile, contact_sheet
 
@@ -185,7 +205,7 @@ def compare_sheets(settings: Settings, models: list[str], frame_ids: list[str],
     for fid in frame_ids:
         row = []
         for m in models:
-            cp = cache / m / prompt_version / f"{fid}.json"
+            cp = cache / model_dir(m) / prompt_version / f"{fid}.json"
             rec = json.loads(cp.read_text(encoding="utf-8")) if cp.is_file() else None
             resp = rec["response"] if rec else None
             if resp is None:
@@ -204,9 +224,9 @@ def compare_sheets(settings: Settings, models: list[str], frame_ids: list[str],
     cols = 2 * len(models) if len(models) <= 2 else len(models)
     for i in range(0, len(tiles_per_frame), per_sheet):
         chunk = [t for row in tiles_per_frame[i:i + per_sheet] for t in row]
-        path = settings.paths.qa / f"pilot_compare_{i // per_sheet + 1}.jpg"
+        path = settings.paths.qa / f"{name}_{i // per_sheet + 1}.jpg"
         contact_sheet(chunk, path, cols=cols,
-                      title=f"Pilot {prompt_version}: " + " | ".join(models)
+                      title=f"{title} {prompt_version}: " + " | ".join(models)
                             + f" (sheet {i // per_sheet + 1})")
         out.append(path)
     return out

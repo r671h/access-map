@@ -1,8 +1,9 @@
 """Gemini client: fingerprinted cache, budget ledger, rate limit, retries, strict validation
-(SPEC §4)."""
+(SPEC §4). LocalAnalyzer runs the same prompt/schema/cache on a local Ollama model."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -12,6 +13,7 @@ import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 from pydantic import ValidationError
@@ -27,6 +29,16 @@ JPEG_QUALITY = 85
 RETRY_CODES = {429, 500, 502, 503, 504}
 TEMPERATURE = 0.1
 THINKING_FALLBACK = {"MINIMAL": "LOW", "LOW": None}
+LOCAL_PREFIX = "ollama:"
+
+
+def is_local(model: str) -> bool:
+    return model.startswith(LOCAL_PREFIX)
+
+
+def model_dir(model: str) -> str:
+    """Folder/file-safe model name ("ollama:qwen3-vl:8b" -> "ollama_qwen3-vl_8b")."""
+    return model.replace(":", "_").replace("/", "_")
 
 
 class BudgetExceeded(RuntimeError):
@@ -118,7 +130,7 @@ class GeminiAnalyzer:
         self.prompt_version = prompt_version
         self.active_types = list(active_types)
         self.schema = response_model(tuple(active_types))
-        self.cache_dir = cache_dir / model / prompt_version
+        self.cache_dir = cache_dir / model_dir(model) / prompt_version
         self.stale_dir = cache_dir / "_stale"
         self.schema_sha = _sha(json.dumps(self.schema.model_json_schema(),
                                           sort_keys=True).encode())
@@ -234,7 +246,7 @@ class GeminiAnalyzer:
     def _retire(self, cp: Path) -> None:
         """Move a stale record aside instead of deleting it (it was paid for)."""
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-        dest = (self.stale_dir / self.model / self.prompt_version
+        dest = (self.stale_dir / model_dir(self.model) / self.prompt_version
                 / f"{cp.stem}.{stamp}.json")
         dest.parent.mkdir(parents=True, exist_ok=True)
         cp.replace(dest)
@@ -289,3 +301,72 @@ class GeminiAnalyzer:
             record["error"] = last_error
         self._write(cp, record)
         return record if parsed else None
+
+
+class LocalAnalyzer(GeminiAnalyzer):
+    """Same prompt, schema, cache and validation as GeminiAnalyzer, but the call goes to a
+    local Ollama server (/api/chat with the JSON schema as `format`). Local calls cost
+    nothing, so the ledger here is a separate log, not the Gemini budget."""
+
+    # Small models under a JSON grammar can loop (the same curb 26 times with the box
+    # shifted a few px each time), so the local grammar caps the list and the output length.
+    # num_ctx 4096 keeps an 8B Q4 model fully on an 8 GB GPU (8192 spilled 20% to the CPU).
+    MAX_FEATURES = 8
+    OPTIONS = {"temperature": TEMPERATURE, "num_ctx": 4096, "num_predict": 1500}
+
+    def __init__(self, *, host: str, timeout_s: float = 600, **kw):
+        super().__init__(client=None, thinking_level=None, **kw)
+        self.host = host.rstrip("/")
+        self.timeout_s = timeout_s
+        self.format = self.schema.model_json_schema()
+        self.format["properties"]["features"]["maxItems"] = self.MAX_FEATURES
+
+    def _inputs(self, frame: dict, root: Path) -> tuple[str, Path, dict]:
+        prompt, image_path, inputs = super()._inputs(frame, root)
+        inputs["local"] = _sha(json.dumps({"format": self.format, "options": self.OPTIONS},
+                                          sort_keys=True).encode())
+        return prompt, image_path, inputs
+
+    def _call(self, image: bytes, prompt: str, frame_id: str):
+        import requests
+
+        body = {
+            "model": self.model.removeprefix(LOCAL_PREFIX),
+            "messages": [{"role": "user", "content": prompt,
+                          "images": [base64.b64encode(image).decode("ascii")]}],
+            "format": self.format,
+            "stream": False,
+            "think": False,
+            "options": self.OPTIONS,
+        }
+
+        def once():
+            self.ledger.reserve()
+            try:
+                r = requests.post(f"{self.host}/api/chat", json=body, timeout=self.timeout_s)
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                self.ledger.release()
+                self.ledger.record({"model": self.model, "frame_id": frame_id, "ok": False,
+                                    "calls": 0, "error": str(e)[:200]})
+                raise
+            usage = {
+                "prompt_tokens": data.get("prompt_eval_count"),
+                "output_tokens": data.get("eval_count"),
+                "thinking_tokens": None,
+                "seconds": round((data.get("total_duration") or 0) / 1e9, 2),
+            }
+            self.ledger.record({"model": self.model, "prompt_version": self.prompt_version,
+                                "frame_id": frame_id, "ok": True, **usage})
+            return SimpleNamespace(text=data["message"]["content"]), usage
+
+        def retryable(e: Exception) -> bool:
+            if isinstance(e, BudgetExceeded):
+                return False
+            if isinstance(e, requests.HTTPError):
+                return e.response is not None and e.response.status_code in RETRY_CODES
+            return isinstance(e, (requests.ConnectionError, requests.Timeout))
+
+        return with_retries(once, retries=3, is_retryable=retryable,
+                            what=f"ollama {self.model} {frame_id}")

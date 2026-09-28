@@ -69,6 +69,7 @@ def cmd_fetch_images(args) -> int:
 def cmd_analyze(args) -> int:
     from accessmap.config import get_settings
     from accessmap.vision.analyze import load_frames, run
+    from accessmap.vision.client import model_dir
 
     settings = get_settings()
     model = args.model or settings.project.gemini.model
@@ -76,14 +77,20 @@ def cmd_analyze(args) -> int:
     if not model:
         print("No model chosen yet: pass --model or set gemini.model in config/project.yaml")
         return 2
-    out = None
     if args.subset:
         from accessmap.eval.labels import load_selection
 
         ids = load_selection(settings.root)[f"{args.subset}_subset"]
-        out = settings.paths.processed / "runs" / f"{model}_{args.prompt}_{args.subset}.jsonl"
+        scope = args.subset
     else:
         ids = None if args.all else sorted(load_frames(settings).frame_id)[: args.limit]
+        scope = "all" if args.all else f"limit{args.limit}"
+    # Only a full run of the configured model/prompt feeds the pipeline (detections.jsonl);
+    # test runs (subsets, --limit, other models or prompts) go to data/processed/runs/.
+    live = (args.all and model == settings.project.gemini.model
+            and args.prompt == settings.project.gemini.prompt)
+    out = None if live else (settings.paths.processed / "runs"
+                             / f"{model_dir(model)}_{args.prompt}_{scope}.jsonl")
     stats = run(settings, model, ids, prompt_version=args.prompt, out=out,
                 retry_failed=args.retry_failed)
     print(json.dumps(stats, indent=2))
@@ -192,8 +199,10 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--reselect", action="store_true",
                    help="redo the selection from cached metadata")
     i.set_defaults(fn=cmd_fetch_images)
-    a = sub.add_parser("analyze", help="run Gemini on frames -> data/processed/detections.jsonl")
-    a.add_argument("--model")
+    a = sub.add_parser("analyze", help="run Gemini on frames -> data/processed/detections.jsonl "
+                       "(full run of the configured model/prompt; other runs -> runs/)")
+    a.add_argument("--model", help="Gemini model id, or ollama:<tag> for a local model "
+                                    "(e.g. ollama:qwen3-vl:8b-instruct)")
     a.add_argument("--prompt", help="default: gemini.prompt in config/project.yaml")
     a.add_argument("--retry-failed", action="store_true",
                    help="call again for frames whose cached outcome is 'no valid answer'")

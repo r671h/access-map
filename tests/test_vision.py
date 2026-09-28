@@ -205,3 +205,79 @@ def test_thinking_level_steps_up_when_rejected(tmp_path, frame):
     a.thinking_level = "MINIMAL"
     assert a.analyze(frame, tmp_path) is not None
     assert a.thinking_level == "LOW" and a.ledger.used == 1
+
+
+class FakeOllama:
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.bodies = []
+
+    def post(self, url, json, timeout):
+
+        self.bodies.append(json)
+        r = self.replies.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"message": {"content": r if isinstance(r, str) else
+                                      __import__("json").dumps(r)},
+                          "prompt_eval_count": 1500, "eval_count": 200,
+                          "total_duration": 4_500_000_000})
+
+
+def make_local(tmp_path, monkeypatch, replies):
+    import requests
+
+    fake = FakeOllama(replies)
+    monkeypatch.setattr(requests, "post", fake.post)
+    a = client.LocalAnalyzer(host="http://ollama:11434/", model="ollama:qwen3-vl:8b",
+                             prompt_version="v1", active_types=TYPES,
+                             cache_dir=tmp_path / "cache",
+                             ledger=CallLedger(tmp_path / "local.jsonl", 10**9),
+                             limiter=RateLimiter(6000), failed_log=tmp_path / "failed.jsonl")
+    return a, fake
+
+
+def test_local_analyzer_calls_ollama_with_schema_and_caches(tmp_path, frame, monkeypatch):
+    import requests
+
+    a, fake = make_local(tmp_path, monkeypatch,
+                         [requests.ConnectionError("down"), "not json", GOOD])
+    rec = a.analyze(frame, tmp_path)
+    assert rec["response"]["features"][0]["type"] == "raised_curb"
+    body = fake.bodies[0]
+    assert body["model"] == "qwen3-vl:8b" and body["stream"] is False
+    assert body["format"]["properties"]["features"]["maxItems"] == 8
+    assert len(body["messages"][0]["images"]) == 1
+    assert rec["usage"][-1]["seconds"] == 4.5
+    # cached under a Windows-safe folder name; a rerun makes no call
+    assert (tmp_path / "cache" / "ollama_qwen3-vl_8b" / "v1" / "f1.json").is_file()
+    assert a.analyze(frame, tmp_path) is not None and not fake.replies
+    assert a.ledger.used == 2  # connection error is not counted
+
+
+def test_model_dir_keeps_gemini_names():
+    assert client.model_dir("gemini-3.8-flash") == "gemini-3.8-flash"
+    assert client.is_local("ollama:x") and not client.is_local("gemini-3.8-flash")
+
+
+@pytest.mark.parametrize("argv, live", [
+    (["analyze", "--all"], True),
+    (["analyze", "--limit", "3"], False),
+    (["analyze", "--all", "--model", "ollama:qwen3-vl:8b"], False),
+    (["analyze", "--all", "--prompt", "v9"], False),
+])
+def test_only_full_configured_run_writes_live_detections(settings, monkeypatch, argv, live):
+    from accessmap import cli
+
+    settings.project.gemini.model, settings.project.gemini.prompt = "gemini-x", "v3"
+    monkeypatch.setattr("accessmap.config.get_settings", lambda: settings)
+    monkeypatch.setattr(analyze, "load_frames",
+                        lambda s: pd.DataFrame({"frame_id": ["a", "b", "c", "d"]}))
+    seen = {}
+    monkeypatch.setattr(analyze, "run", lambda *a, **kw: seen.update(kw) or {})
+    cli.main(argv)
+    assert (seen["out"] is None) == live
+    if not live:
+        assert seen["out"].parent.name == "runs"
