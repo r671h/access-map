@@ -20,7 +20,18 @@ reports/qa/
 *.parquet
 *.graphml
 *.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 *.db
+*.log
+
+# Test / coverage / browser-automation output
+.coverage
+.coverage.*
+htmlcov/
+test-results/
+playwright-report/
 
 # Static site build output (accessmap export-site) and Vercel link
 site/
