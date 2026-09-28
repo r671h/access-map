@@ -49,6 +49,12 @@ def test_index_is_served(client):
     assert r.status_code == 200 and "maplibre" in r.text
 
 
+def test_stats_page_is_served(client):
+    r = client.get("/stats.html")
+    assert r.status_code == 200 and "/api/stats" in r.text
+    assert 'href="stats.html"' in client.get("/").text
+
+
 def test_config(client):
     c = client.get("/api/config").json()
     assert c["types"] == ["curb_ramp", "raised_curb", "stairs"]
@@ -106,6 +112,25 @@ def test_stats(client):
     assert s["barriers"] == 3 and s["snapped"] == 2 and s["frames"] == 1
     assert s["by_type"]["raised_curb"] == {"total": 1, "unsnapped": 1}
     assert s["gemini_calls"]["used"] == 0
+    assert s["accuracy"]["split"] is None and s["accuracy"]["per_type"] == {}
+    assert s["photo_dates"]["from"] <= s["photo_dates"]["to"]
+
+
+def test_stats_accuracy_headline_holdout_table_all_labelled(client, settings):
+    def labels(frames, tp, fp, fn):
+        cell = {"tp": tp, "fp": fp, "fn": fn, "precision": 0.5, "recall": 0.5, "f1": 0.5}
+        return {"labels": {"frames": frames, "micro": cell, "per_type": {"stairs": cell}}}
+
+    settings.paths.reports.mkdir(parents=True, exist_ok=True)
+    key = f"{settings.project.gemini.model}/{settings.project.gemini.prompt}"
+    (settings.paths.reports / "metrics.json").write_text(json.dumps({key: {
+        "tuning": labels(40, 9, 9, 9), "holdout": labels(18, 3, 4, 1),
+        "all_frames": labels(60, 9, 16, 3)}}), encoding="utf-8")
+    a = client.get("/api/stats").json()["accuracy"]
+    assert (a["split"], a["frames"], a["micro"]["fp"]) == ("holdout", 18, 4)
+    assert (a["by_type_split"], a["by_type_frames"]) == ("all_frames", 60)
+    assert a["per_type"]["stairs"] == {"tp": 9, "fp": 16, "fn": 3, "precision": 0.5,
+                                       "recall": 0.5}
 
 
 def test_get_feedback_summary(client):
@@ -123,6 +148,8 @@ def test_export_site(client, settings):
     assert stats["barriers"] == 3 and stats["photos"] == 1
     html = (out / "index.html").read_text(encoding="utf-8")
     assert '<meta name="accessmap-mode" content="static">' in html
+    stats_html = (out / "stats.html").read_text(encoding="utf-8")
+    assert '<meta name="accessmap-mode" content="static">' in stats_html
     barriers = json.loads((out / "data" / "barriers.json").read_text(encoding="utf-8"))
     assert len(barriers["features"]) == 3
     assert "feedback" not in json.loads((out / "data" / "stats.json").read_text(encoding="utf-8"))

@@ -2,6 +2,7 @@
 
 site/
   index.html            frontend in static mode (<meta name="accessmap-mode" content="static">)
+  stats.html            statistics page, same static mode
   data/*.json           config, barriers, network, stats, graph — same JSON as the local API
   router.js             in-browser router (port of accessmap.routing.router)
   photos/<frame>.jpg    frames used by barriers, resized (Mapillary, CC BY-SA 4.0)
@@ -76,9 +77,10 @@ def export_site(settings: Settings, out: Path) -> dict:
         raise RuntimeError("no barriers: run `accessmap geolocate` first")
     _prepare_out(out)
 
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    html = html.replace("<head>", '<head>\n<meta name="accessmap-mode" content="static">', 1)
-    (out / "index.html").write_text(html, encoding="utf-8", newline="\n")
+    for page in ("index.html", "stats.html"):
+        html = (STATIC / page).read_text(encoding="utf-8")
+        html = html.replace("<head>", '<head>\n<meta name="accessmap-mode" content="static">', 1)
+        (out / page).write_text(html, encoding="utf-8", newline="\n")
 
     # Feedback lives in the hosted DB online; the exported barriers carry none.
     _write_json(out / "data" / "config.json", data.config())

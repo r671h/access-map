@@ -143,7 +143,13 @@ class SiteData:
         unsn = Counter(f["properties"]["type"] for f in feats if not f["properties"]["snapped"])
         g = s.project.gemini
         m = self._metrics.get().get(f"{g.model}/{g.prompt}", {})
-        final = m.get("holdout") or m.get("tuning") or {}
+        split = "holdout" if m.get("holdout") else "tuning" if m.get("tuning") else None
+        final = m.get(split) or {}
+        labels = final.get("labels", {})
+        # Per-type rows need the bigger sample: all hand-labelled frames (hold-out + tuning).
+        by_type_split = "all_frames" if m.get("all_frames") else split
+        type_labels = (m.get(by_type_split) or {}).get("labels", {})
+        dates = sorted(str(fr["captured_at"])[:10] for fr in self.frames().values())
         ledger = s.paths.cache / "gemini_calls.jsonl"
         calls = 0
         if ledger.is_file():
@@ -158,8 +164,19 @@ class SiteData:
                         for t, n in by_type.most_common()},
             "frames": len(self.frames()),
             "model": g.model, "prompt": g.prompt,
-            "precision": final.get("labels", {}).get("micro", {}).get("precision"),
-            "recall": final.get("labels", {}).get("micro", {}).get("recall"),
+            "precision": labels.get("micro", {}).get("precision"),
+            "recall": labels.get("micro", {}).get("recall"),
+            # Frame-level scores against the hand labels: headline on `split` (hold-out once
+            # scored), the per-type table on all labelled frames (the stats page).
+            "accuracy": {"split": split, "frames": labels.get("frames", 0),
+                         "micro": labels.get("micro"),
+                         "by_type_split": by_type_split,
+                         "by_type_frames": type_labels.get("frames", 0),
+                         "by_type_micro": type_labels.get("micro"),
+                         "per_type": {t: {k: v[k] for k in
+                                          ("tp", "fp", "fn", "precision", "recall")}
+                                      for t, v in type_labels.get("per_type", {}).items()}},
+            "photo_dates": {"from": dates[0], "to": dates[-1]} if dates else None,
             "gemini_calls": {"used": calls, "budget": s.project.budget.max_gemini_calls},
             "feedback": {"barriers": len(fb),
                          "confirmed": sum(v["status"] == "confirmed" for v in fb.values()),
@@ -177,6 +194,10 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC / "index.html")
+
+    @app.get("/stats.html", include_in_schema=False)
+    def stats_page():
+        return FileResponse(STATIC / "stats.html")
 
     @app.get("/router.js", include_in_schema=False)
     def router_js():

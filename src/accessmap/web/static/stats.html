@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>access-map statistics</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f5fbf%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #ffffff; --panel: #fbfbfa; --text: #1d1d1b; --muted: #62625d; --line: #e3e2dd;
+    --accent: #1f5fbf; --ok: #1a7f3c; --danger: #b3261e;
+    /* chart series (validated: colorblind-safe, >= 3:1 on the surface) */
+    --s-on: #2a78d6; --s-off: #eb6834;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--panel); color: var(--text); }
+  main { max-width: 880px; margin: 0 auto; padding: 16px 16px 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .area { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+  a { color: var(--accent); }
+  .lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .lang button { border: 0; background: transparent; padding: 4px 10px; font: inherit; font-size: 13px;
+    cursor: pointer; color: var(--muted); }
+  .lang button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  section { margin-top: 22px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    margin: 0 0 10px; font-weight: 600; }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+  .tile { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .tile span { font-size: 12px; color: var(--muted); line-height: 1.35; display: block; margin-top: 2px; }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.5; margin: 10px 0 0; }
+
+  /* Horizontal stacked bars: attached (on the walking network) | not attached. */
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; margin-bottom: 10px; }
+  .key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+  .bars { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 8px 12px; align-items: center; }
+  .bar-label { font-size: 14px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+  .track { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .bar { display: flex; gap: 2px; height: 18px; }
+  .seg { height: 100%; min-width: 3px; cursor: default; }
+  .seg:last-child { border-radius: 0 4px 4px 0; }
+  .seg.on { background: var(--s-on); } .seg.off { background: var(--s-off); }
+  .seg:hover { filter: brightness(0.9); }
+  .bar-val { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #tip { position: fixed; pointer-events: none; background: var(--text); color: var(--bg); font-size: 12px;
+    padding: 5px 8px; border-radius: 6px; line-height: 1.35; z-index: 10; max-width: 240px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tfoot td { font-weight: 600; border-bottom: 0; }
+  .na { color: var(--muted); }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  @media (max-width: 520px) {
+    .bars { grid-template-columns: 1fr; gap: 2px 0; }
+    .bar-label { margin-top: 6px; }
+    th, td { padding: 6px 5px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 data-i18n="title"></h1>
+      <div class="area" id="area"></div>
+    </div>
+    <div class="head-right">
+      <a href="./" id="back" data-i18n="back"></a>
+      <div class="lang" role="group" aria-label="Language">
+        <button data-lang="en" aria-pressed="true">EN</button>
+        <button data-lang="de" aria-pressed="false">DE</button>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="tiles" id="tiles"></div>
+    <p class="note" id="tiles-note"></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="byType"></h2>
+    <div class="card">
+      <div class="legend">
+        <span><i class="key" style="background:var(--s-on)"></i><span data-i18n="attached"></span></span>
+        <span><i class="key" style="background:var(--s-off)"></i><span data-i18n="notAttached"></span></span>
+      </div>
+      <div class="bars" id="bars" role="list"></div>
+      <p class="note" data-i18n="barsNote"></p>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="accuracy"></h2>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th data-i18n="type"></th><th data-i18n="precision"></th><th data-i18n="recall"></th>
+            <th data-i18n="tp"></th><th data-i18n="fp"></th><th data-i18n="fn"></th></tr></thead>
+          <tbody id="acc-body"></tbody>
+          <tfoot id="acc-foot"></tfoot>
+        </table>
+      </div>
+      <p class="note" id="acc-note"></p>
+    </div>
+  </section>
+
+  <section id="fb-section" hidden>
+    <h2 data-i18n="feedback"></h2>
+    <div class="tiles" id="fb-tiles"></div>
+    <p class="note" data-i18n="feedbackNote"></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="method"></h2>
+    <div class="card"><p class="note" id="method" style="margin:0"></p></div>
+  </section>
+
+  <footer>
+    <span data-i18n="attribution"></span>
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors ·
+    <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> (CC BY-SA 4.0)
+  </footer>
+</main>
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+// Same colours as the map dots, so a type is recognisable across both pages.
+const COLORS = {
+  curb_ramp: "#1a9850", raised_curb: "#d73027", step: "#f46d43", stairs: "#a50026",
+  narrow_passage: "#7b3294", steep_slope: "#2166ac", rough_surface: "#8c510a", no_sidewalk: "#1d1d1b",
+};
+const I18N = {
+  en: {
+    title: "access-map statistics", back: "← Back to the map",
+    barriers: "barriers found", attachedShare: "attached to the walking network",
+    multiView: "seen in 2+ photos", photos: "photos analysed",
+    precisionHO: "precision (share of detections that are real)", recallHO: "recall (share of real barriers found)",
+    tilesNote: (n) => `Precision and recall are measured on ${n} hand-labelled test photos the prompt was never tuned on — a small sample, so read them as a rough guide.`,
+    byType: "Barriers by type", attached: "on the walking network (used for routing)",
+    notAttached: "off the network (shown, ignored by routing)",
+    barsNote: "Curb ramps are a positive feature: they make a crossing usable, so routing prefers them.",
+    segTip: (type, part, n, total) => `${type}: ${n} of ${total} ${part}`,
+    onShort: "on the network", offShort: "off the network",
+    accuracy: "How often the model is right, per type", type: "Type",
+    tp: "Found", fp: "False alarms", fn: "Missed", precision: "Precision", recall: "Recall",
+    all: "All types",
+    accNote: (n) => `Counted per photo on all ${n} hand-labelled photos (a type is "found" when the model reports it where the label says it is visible). Most of these photos were also used to tune the prompt, so these numbers are a little optimistic; a dash means there was nothing to measure.`,
+    feedback: "Feedback from users", fbBarriers: "barriers with feedback", confirmed: "confirmed", rejected: "rejected (removed from routing)", disputed: "disputed",
+    feedbackNote: "A barrier counts as rejected when more people marked it wrong than correct.",
+    method: "How this was made",
+    methodText: (s) => `Street-level photos from Mapillary (${s.photo_dates ? s.photo_dates.from + " to " + s.photo_dates.to : "dates unknown"}) were analysed by Google's ${s.model} (prompt ${s.prompt}). Detections were placed on the map from the camera position and direction, merged across photos, and attached to the OpenStreetMap walking network. ${s.gemini_calls.used} of ${s.gemini_calls.budget} budgeted model calls were used. Detections are automatic and can be wrong — check the photo before relying on one.`,
+    types_: { curb_ramp: "Curb ramp", raised_curb: "Raised curb", step: "Step", stairs: "Stairs",
+      narrow_passage: "Narrow passage", steep_slope: "Steep slope", rough_surface: "Rough surface", no_sidewalk: "No sidewalk" },
+    attribution: "Map data and photos:", error: "Could not load statistics: ",
+  },
+  de: {
+    title: "access-map Statistik", back: "← Zurück zur Karte",
+    barriers: "gefundene Barrieren", attachedShare: "mit dem Fußwegenetz verbunden",
+    multiView: "auf 2+ Fotos gesehen", photos: "analysierte Fotos",
+    precisionHO: "Präzision (Anteil echter Treffer)", recallHO: "Trefferquote (Anteil gefundener Barrieren)",
+    tilesNote: (n) => `Präzision und Trefferquote sind an ${n} handbeschrifteten Testfotos gemessen, mit denen der Prompt nie abgestimmt wurde — eine kleine Stichprobe, also nur ein grober Anhaltspunkt.`,
+    byType: "Barrieren nach Art", attached: "im Fußwegenetz (fürs Routing genutzt)",
+    notAttached: "abseits des Netzes (angezeigt, beim Routing ignoriert)",
+    barsNote: "Abgesenkte Bordsteine sind positiv: Sie machen einen Übergang nutzbar, das Routing bevorzugt sie.",
+    segTip: (type, part, n, total) => `${type}: ${n} von ${total} ${part}`,
+    onShort: "im Netz", offShort: "abseits des Netzes",
+    accuracy: "Wie oft das Modell richtig liegt, nach Art", type: "Art",
+    tp: "Gefunden", fp: "Fehlalarme", fn: "Übersehen", precision: "Präzision", recall: "Trefferquote",
+    all: "Alle Arten",
+    accNote: (n) => `Pro Foto gezählt auf allen ${n} handbeschrifteten Fotos („gefunden“, wenn das Modell die Art meldet und sie laut Beschriftung sichtbar ist). Die meisten dieser Fotos wurden auch zum Abstimmen des Prompts genutzt, die Werte sind daher etwas zu optimistisch; ein Strich heißt: nichts zu messen.`,
+    feedback: "Rückmeldungen", fbBarriers: "Barrieren mit Rückmeldung", confirmed: "bestätigt", rejected: "abgelehnt (nicht im Routing)", disputed: "umstritten",
+    feedbackNote: "Eine Barriere gilt als abgelehnt, wenn mehr Personen sie als falsch als als richtig markiert haben.",
+    method: "Wie das entstanden ist",
+    methodText: (s) => `Straßenfotos von Mapillary (${s.photo_dates ? s.photo_dates.from + " bis " + s.photo_dates.to : "Datum unbekannt"}) wurden mit Googles ${s.model} (Prompt ${s.prompt}) ausgewertet. Die Funde wurden über Kameraposition und Blickrichtung auf der Karte platziert, über Fotos hinweg zusammengeführt und mit dem OpenStreetMap-Fußwegenetz verbunden. ${s.gemini_calls.used} von ${s.gemini_calls.budget} eingeplanten Modellaufrufen wurden genutzt. Die Funde sind automatisch und können falsch sein — vor dem Verlassen bitte das Foto prüfen.`,
+    types_: { curb_ramp: "Abgesenkter Bordstein", raised_curb: "Hoher Bordstein", step: "Stufe", stairs: "Treppe",
+      narrow_passage: "Engstelle", steep_slope: "Starke Steigung", rough_surface: "Unebener Belag", no_sidewalk: "Kein Gehweg" },
+    attribution: "Kartendaten und Fotos:", error: "Statistik konnte nicht geladen werden: ",
+  },
+};
+
+const STATIC_SITE = document.querySelector('meta[name="accessmap-mode"]')?.content === "static";
+const API = STATIC_SITE ? { config: "data/config.json", stats: "data/stats.json" }
+                        : { config: "/api/config", stats: "/api/stats" };
+const $ = id => document.getElementById(id);
+const state = { lang: "en", cfg: null, stats: null, feedback: null };
+const t = () => I18N[state.lang];
+const pct = x => x == null ? "–" : Math.round(x * 100) + "%";
+function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
+
+function tile(value, label) {
+  const d = document.createElement("div"); d.className = "tile";
+  const b = document.createElement("b"); b.textContent = value;
+  const s = document.createElement("span"); s.textContent = label;
+  d.append(b, s); return d;
+}
+
+function renderTiles() {
+  const s = state.stats, L = t();
+  $("tiles").replaceChildren(
+    tile(s.barriers, L.barriers),
+    tile(pct(s.barriers ? s.snapped / s.barriers : null), L.attachedShare),
+    tile(s.multi_view, L.multiView),
+    tile(s.frames, L.photos),
+    tile(pct(s.precision), L.precisionHO),
+    tile(pct(s.recall), L.recallHO));
+  $("tiles-note").textContent = L.tilesNote(s.accuracy?.frames ?? 0);
+}
+
+function renderBars() {
+  const L = t(), rows = Object.entries(state.stats.by_type);
+  const max = Math.max(1, ...rows.map(([, v]) => v.total));
+  const box = $("bars"); box.replaceChildren();
+  for (const [type, v] of rows) {
+    const on = v.total - v.unsnapped, name = L.types_[type] || type;
+    const label = document.createElement("div"); label.className = "bar-label"; label.setAttribute("role", "listitem");
+    label.innerHTML = `<span class="dot" style="background:${COLORS[type] || "#888"}"></span>`;
+    label.append(name);
+    const track = document.createElement("div"); track.className = "track";
+    const bar = document.createElement("div"); bar.className = "bar";
+    bar.style.width = `calc(${v.total / max} * (100% - 44px))`;  // room for the total label
+    for (const [cls, n, part] of [["on", on, L.onShort], ["off", v.unsnapped, L.offShort]]) {
+      if (!n) continue;
+      const seg = document.createElement("div"); seg.className = "seg " + cls;
+      seg.style.flex = String(n);
+      seg.dataset.tip = L.segTip(name, part, n, v.total);
+      seg.setAttribute("aria-label", seg.dataset.tip);
+      bar.appendChild(seg);
+    }
+    const val = document.createElement("span"); val.className = "bar-val"; val.textContent = v.total;
+    track.append(bar, val);
+    box.append(label, track);
+  }
+}
+
+function renderAccuracy() {
+  const L = t(), a = state.stats.accuracy || {}, body = $("acc-body");
+  body.replaceChildren();
+  const cell = (v, na) => { const td = document.createElement("td"); td.textContent = v; if (na) td.className = "na"; return td; };
+  const row = (name, m, color) => {
+    const tr = document.createElement("tr"), first = document.createElement("td");
+    if (color) first.innerHTML = `<span class="dot" style="display:inline-block;margin-right:8px;background:${color}"></span>`;
+    first.append(name);
+    tr.append(first, cell(pct(m.precision), m.precision == null), cell(pct(m.recall), m.recall == null),
+      cell(m.tp), cell(m.fp), cell(m.fn));
+    return tr;
+  };
+  const types = Object.entries(a.per_type || {}).sort((x, y) => (y[1].tp + y[1].fp + y[1].fn) - (x[1].tp + x[1].fp + x[1].fn));
+  for (const [type, m] of types) body.appendChild(row(L.types_[type] || type, m, COLORS[type]));
+  $("acc-foot").replaceChildren(...(a.by_type_micro ? [row(L.all, a.by_type_micro)] : []));
+  $("acc-note").textContent = L.accNote(a.by_type_frames ?? 0);
+}
+
+function renderFeedback() {
+  const fb = state.feedback, L = t();
+  $("fb-section").hidden = !fb || !state.cfg.features.includes("feedback");
+  if (!fb) return;
+  const vals = Object.values(fb), n = st => vals.filter(v => v.status === st).length;
+  $("fb-tiles").replaceChildren(tile(vals.length, L.fbBarriers), tile(n("confirmed"), L.confirmed),
+    tile(n("rejected"), L.rejected), tile(n("disputed"), L.disputed));
+}
+
+function render() {
+  const L = t();
+  document.querySelectorAll("[data-i18n]").forEach(el => { const v = L[el.dataset.i18n]; if (typeof v === "string") el.textContent = v; });
+  document.title = L.title;
+  if (!state.stats) return;
+  renderTiles(); renderBars(); renderAccuracy(); renderFeedback();
+  $("method").textContent = L.methodText(state.stats);
+}
+
+function applyLang(lang) {
+  state.lang = lang; storageSet("accessmap.lang", lang);   // shared with the map page
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === lang));
+  render();
+}
+
+// One tooltip for every bar segment.
+const tip = $("tip");
+document.addEventListener("pointermove", e => {
+  const seg = e.target.closest?.(".seg");
+  if (!seg) { tip.hidden = true; return; }
+  tip.textContent = seg.dataset.tip; tip.hidden = false;
+  const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px";
+});
+
+document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.lang)));
+
+(async () => {
+  try {
+    [state.cfg, state.stats] = await Promise.all([getJSON(API.config), getJSON(API.stats)]);
+    $("area").textContent = state.cfg.area.name;
+    try { state.feedback = await getJSON("/api/feedback"); } catch { state.feedback = null; }
+    const saved = storageGet("accessmap.lang");
+    applyLang(state.cfg.languages.includes(saved) ? saved : state.cfg.language);
+  } catch (err) {
+    applyLang("en");
+    $("tiles-note").textContent = t().error + err.message;
+  }
+})();
+</script>
+</body>
+</html>

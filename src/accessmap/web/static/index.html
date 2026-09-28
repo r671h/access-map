@@ -191,6 +191,7 @@
       <div class="stat"><b id="s-precision">–</b><span data-i18n="precision"></span></div>
     </div>
     <p class="hint" id="s-note"></p>
+    <p class="hint" id="stats-link-row" hidden><a href="stats.html" data-i18n="statsLink"></a></p>
   </section>
 
   <section>
@@ -228,7 +229,7 @@ const COLORS = {
 };
 const I18N = {
   en: {
-    overview: "Overview", barriers: "barriers", photos: "photos", precision: "precision",
+    overview: "Overview", statsLink: "All statistics and accuracy per type →", barriers: "barriers", photos: "photos", precision: "precision",
     types: "Barrier types", minConf: "Min. confidence", showUnsnapped: "Show barriers off the walking network",
     showRejected: "Show barriers rejected by users", showNetwork: "Show walking network",
     legendHint: "Faded dots are not attached to the walking network and are ignored by routing. Bigger dot = higher confidence.",
@@ -265,7 +266,7 @@ const I18N = {
     height: h => `height ≈ ${h} cm`, width: w => `clear width ≈ ${w} m`,
   },
   de: {
-    overview: "Überblick", barriers: "Barrieren", photos: "Fotos", precision: "Präzision",
+    overview: "Überblick", statsLink: "Alle Statistiken und Genauigkeit je Art →", barriers: "Barrieren", photos: "Fotos", precision: "Präzision",
     types: "Barrierearten", minConf: "Mind. Konfidenz", showUnsnapped: "Barrieren abseits des Fußwegenetzes zeigen",
     showRejected: "Von Nutzern abgelehnte Barrieren zeigen", showNetwork: "Fußwegenetz zeigen",
     legendHint: "Blasse Punkte sind nicht mit dem Fußwegenetz verbunden und werden beim Routing ignoriert. Größerer Punkt = höhere Konfidenz.",
@@ -567,6 +568,7 @@ async function init() {
   state.cfg = await getJSON(API.config);
   state.enabled = new Set(state.cfg.types);
   $("area").textContent = state.cfg.area.name;
+  $("stats-link-row").hidden = !state.cfg.features.includes("stats_page");
   const [x0, y0, x1, y1] = state.cfg.area.bbox;
   map.fitBounds([[x0, y0], [x1, y1]], { padding: 20, duration: 0 });
   const [barriers, network] = await Promise.all([getJSON(API.barriers), getJSON(API.network)]);
