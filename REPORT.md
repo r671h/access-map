@@ -51,3 +51,16 @@ Visual check of `reports/qa/pilot_compare_1..5.jpg`:
   - rough_surface: sett/cobblestone sidewalks and gutters, plausible.
   - no_sidewalk: 4 of 11 are car-park ramp frames from a dashcam with a blocked windshield
     that Gemini still called usable; 5 are construction fences (temporary).
+
+## Geolocation (phase 4)
+- 301 permanent detections placed (300 with Gemini's distance, 1 from the box bottom) →
+  249 clusters (26 seen from more than one image) → 166 snapped, 83 unsnapped (33%).
+- Unsnapped: raised_curb 60 of 126, curb_ramp 8/31, rough_surface 6/44, stairs 4/17,
+  no_sidewalk 3/6, step 2/11, narrow_passage 0/14. Without raised_curb: 18.7%.
+- Cause: v1 reports ordinary along-street curbs as raised_curb; these lie mid-block, a median
+  18.7 m from any node or crossing, so they correctly fail the 12 m curb rule. User decision:
+  keep 12/10 m and fix the class in phase 5.
+- `reports/qa/barriers_map.png`, `barriers_map_zoom.png`: barriers follow the camera tracks and
+  sit on sidewalks/footways, not inside blocks. Visible leftovers: building-entrance stairs
+  snapped ~10 m onto the nearest footway, and no_sidewalk points from car-park ramp frames
+  near Jahnplatz (unsnapped, so they do not affect routing).

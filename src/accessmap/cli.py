@@ -103,6 +103,14 @@ def cmd_pilot(args) -> int:
     return 0
 
 
+def cmd_geolocate(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.geo.geolocate import run
+
+    print(json.dumps(run(get_settings()), indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -134,6 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("-n", type=int, default=30)
     pl.add_argument("--prompt", default="v1")
     pl.set_defaults(fn=cmd_pilot)
+    sub.add_parser("geolocate", help="place, cluster and snap detections -> barriers.geojson"
+                   ).set_defaults(fn=cmd_geolocate)
     return p
 
 
