@@ -146,6 +146,17 @@ def cmd_serve(args) -> int:
     return 0
 
 
+def cmd_export_site(args) -> int:
+    from accessmap.config import get_settings
+    from accessmap.web.export import export_site
+
+    settings = get_settings()
+    stats = export_site(settings, settings.root / args.out)
+    print(json.dumps(stats, indent=2))
+    print(f"deploy: npx vercel deploy {args.out} --prod")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -192,6 +203,9 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     sv.set_defaults(fn=cmd_serve)
+    ex = sub.add_parser("export-site", help="static site for Vercel -> site/")
+    ex.add_argument("--out", default="site")
+    ex.set_defaults(fn=cmd_export_site)
     sub.add_parser("geolocate", help="place, cluster and snap detections -> barriers.geojson"
                    ).set_defaults(fn=cmd_geolocate)
     return p

@@ -1,4 +1,7 @@
 import json
+import shutil
+import subprocess
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -103,3 +106,66 @@ def test_stats(client):
     assert s["barriers"] == 3 and s["snapped"] == 2 and s["frames"] == 1
     assert s["by_type"]["raised_curb"] == {"total": 1, "unsnapped": 1}
     assert s["gemini_calls"]["used"] == 0
+
+
+def test_get_feedback_summary(client):
+    assert client.get("/api/feedback").json() == {}
+    client.post("/api/feedback", json={"barrier_id": "stairs-1", "verdict": "confirm"})
+    assert client.get("/api/feedback").json() == {
+        "stairs-1": {"confirm": 1, "reject": 0, "status": "confirmed"}}
+
+
+def test_export_site(client, settings):
+    from accessmap.web.export import MARKER, export_site
+
+    out = settings.root / "site"
+    stats = export_site(settings, out)
+    assert stats["barriers"] == 3 and stats["photos"] == 1
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert '<meta name="accessmap-mode" content="static">' in html
+    barriers = json.loads((out / "data" / "barriers.json").read_text(encoding="utf-8"))
+    assert len(barriers["features"]) == 3
+    assert "feedback" not in json.loads((out / "data" / "stats.json").read_text(encoding="utf-8"))
+    assert (out / "photos" / "f1.jpg").is_file()
+    assert (out / "api" / "feedback.js").is_file() and (out / "vercel.json").is_file()
+    assert '"stairs-1"' in (out / "api" / "_ids.js").read_text(encoding="utf-8")
+    # re-export replaces its own folder, but never a foreign one
+    export_site(settings, out)
+    foreign = settings.root / "not-a-site"
+    foreign.mkdir()
+    (foreign / "keep.txt").write_text("mine", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        export_site(settings, foreign)
+    assert (foreign / "keep.txt").is_file()
+    assert (out / MARKER).is_file()
+    # an existing but empty folder (e.g. left by a failed delete) is fine
+    empty = settings.root / "empty-site"
+    empty.mkdir()
+    assert export_site(settings, empty)["barriers"] == 3
+
+
+def test_slim_network_rounds_and_drops_tags():
+    from accessmap.web.export import slim_network
+
+    fc = {"features": [{"properties": {"highway": "footway"}, "geometry": {
+        "type": "LineString", "coordinates": [[8.123456789, 52.1], [8.2, 52.987654321]]}}]}
+    f = slim_network(fc)["features"][0]
+    assert f["properties"] == {} and f["geometry"]["coordinates"] == [[8.123457, 52.1],
+                                                                      [8.2, 52.987654]]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_vercel_feedback_function(tmp_path):
+    """Runs api/feedback.js under Node against an in-memory fake of the Neon driver."""
+    js, tmpl = Path(__file__).parent / "js", Path(__file__).parents[1] / "src/accessmap/web/vercel"
+    (tmp_path / "api").mkdir()
+    shutil.copy(tmpl / "api" / "feedback.js", tmp_path / "api")
+    shutil.copy(tmpl / "package.json", tmp_path)
+    (tmp_path / "api" / "_ids.js").write_text(
+        'export const BARRIER_IDS = ["stairs-1","curb_ramp-1"];\n', encoding="utf-8")
+    shutil.copytree(js / "fake_neon", tmp_path / "node_modules" / "@neondatabase" / "serverless")
+    shutil.copy(js / "feedback_check.mjs", tmp_path / "run.mjs")
+    r = subprocess.run(["node", "run.mjs"], cwd=tmp_path, capture_output=True, text=True,
+                       timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "all checks passed" in r.stdout

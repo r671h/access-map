@@ -1,5 +1,7 @@
 """FastAPI app (SPEC §9): barriers, network, frames/photos, stats, feedback.
 
+The data logic lives in `SiteData`, shared with the static export for Vercel
+(`accessmap export-site`), so the local API and the public site serve the same JSON.
 Routing (`/api/route`) is added in phase 6. Run with `accessmap serve`.
 """
 
@@ -20,6 +22,7 @@ from pydantic import BaseModel, Field
 from accessmap.config import Settings
 
 STATIC = Path(__file__).parent / "static"
+EMPTY_FC = {"type": "FeatureCollection", "features": []}
 
 
 class Feedback(BaseModel):
@@ -47,6 +50,11 @@ class _FileCache:
             return self._data
 
 
+def feedback_status(confirm: int, reject: int) -> str:
+    """Rejected when rejects outnumber confirms (same rule in the Vercel function)."""
+    return "rejected" if reject > confirm else "confirmed" if confirm > reject else "disputed"
+
+
 class FeedbackStore:
     def __init__(self, path: Path):
         self.path = path
@@ -69,7 +77,7 @@ class FeedbackStore:
             return cur.lastrowid
 
     def summary(self) -> dict[str, dict]:
-        """barrier_id -> {confirm, reject, status}; rejected when rejects outnumber confirms."""
+        """barrier_id -> {confirm, reject, status}."""
         with self._conn() as c:
             rows = c.execute("SELECT barrier_id, verdict, COUNT(*) FROM feedback "
                              "GROUP BY barrier_id, verdict").fetchall()
@@ -77,41 +85,84 @@ class FeedbackStore:
         for bid, verdict, n in rows:
             out.setdefault(bid, {"confirm": 0, "reject": 0})[verdict] = n
         for s in out.values():
-            s["status"] = ("rejected" if s["reject"] > s["confirm"] else
-                           "confirmed" if s["confirm"] > s["reject"] else "disputed")
+            s["status"] = feedback_status(s["confirm"], s["reject"])
         return out
 
 
-def create_app(settings: Settings) -> FastAPI:
-    proc = settings.paths.processed
-    empty_fc = {"type": "FeatureCollection", "features": []}
-    snapped = _FileCache(proc / "barriers.geojson", empty_fc)
-    unsnapped = _FileCache(proc / "barriers_unsnapped.geojson", empty_fc)
-    network = _FileCache(settings.paths.raw / "osm" / "walk_edges.geojson", empty_fc)
-    metrics = _FileCache(settings.paths.reports / "metrics.json", {})
-    feedback = FeedbackStore(settings.paths.data / "feedback.sqlite")
-    frames_cache: dict = {}
+class SiteData:
+    """Everything the frontend reads, from the pipeline outputs under the project root."""
 
-    def frames() -> dict[str, dict]:
-        path = proc / "frames.parquet"
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        proc = settings.paths.processed
+        self._snapped = _FileCache(proc / "barriers.geojson", EMPTY_FC)
+        self._unsnapped = _FileCache(proc / "barriers_unsnapped.geojson", EMPTY_FC)
+        self._network = _FileCache(settings.paths.raw / "osm" / "walk_edges.geojson", EMPTY_FC)
+        self._metrics = _FileCache(settings.paths.reports / "metrics.json", {})
+        self._frames: dict = {}
+
+    def config(self) -> dict:
+        p = self.settings.project
+        return {"area": {"name": p.area.name, "bbox": p.area.bbox},
+                "languages": p.ui.languages, "language": p.ui.language,
+                "types": p.detection.types, "profiles": p.profiles,
+                "features": p.app.features, "routing": False}
+
+    def frames(self) -> dict[str, dict]:
+        path = self.settings.paths.processed / "frames.parquet"
         if not path.is_file():
             return {}
         m = path.stat().st_mtime
-        if frames_cache.get("mtime") != m:
+        if self._frames.get("mtime") != m:
             import pandas as pd
 
             df = pd.read_parquet(path)
-            frames_cache.update(mtime=m, data={r["frame_id"]: r for r in df.to_dict("records")})
-        return frames_cache["data"]
+            self._frames = {"mtime": m,
+                            "data": {r["frame_id"]: r for r in df.to_dict("records")}}
+        return self._frames["data"]
 
-    def all_barriers() -> list[dict]:
-        fb = feedback.summary()
-        out = []
-        for fc in (snapped.get(), unsnapped.get()):
-            for f in fc["features"]:
-                p = f["properties"]
-                out.append({**f, "properties": {**p, "feedback": fb.get(p["id"])}})
-        return out
+    def barriers(self, feedback: dict[str, dict] | None = None) -> list[dict]:
+        fb = feedback or {}
+        return [{**f, "properties": {**f["properties"], "feedback": fb.get(f["properties"]["id"])}}
+                for fc in (self._snapped.get(), self._unsnapped.get()) for f in fc["features"]]
+
+    def network(self) -> dict:
+        return self._network.get()
+
+    def stats(self, feedback: dict[str, dict] | None = None) -> dict:
+        s = self.settings
+        feats = self.barriers(feedback)
+        by_type = Counter(f["properties"]["type"] for f in feats)
+        unsn = Counter(f["properties"]["type"] for f in feats if not f["properties"]["snapped"])
+        g = s.project.gemini
+        m = self._metrics.get().get(f"{g.model}/{g.prompt}", {})
+        final = m.get("holdout") or m.get("tuning") or {}
+        ledger = s.paths.cache / "gemini_calls.jsonl"
+        calls = 0
+        if ledger.is_file():
+            with open(ledger, encoding="utf-8") as fh:
+                calls = sum(json.loads(line).get("calls", 1) for line in fh if line.strip())
+        fb = feedback or {}
+        return {
+            "barriers": len(feats),
+            "snapped": sum(f["properties"]["snapped"] for f in feats),
+            "multi_view": sum(f["properties"]["n_views"] > 1 for f in feats),
+            "by_type": {t: {"total": n, "unsnapped": unsn.get(t, 0)}
+                        for t, n in by_type.most_common()},
+            "frames": len(self.frames()),
+            "model": g.model, "prompt": g.prompt,
+            "precision": final.get("labels", {}).get("micro", {}).get("precision"),
+            "recall": final.get("labels", {}).get("micro", {}).get("recall"),
+            "gemini_calls": {"used": calls, "budget": s.project.budget.max_gemini_calls},
+            "feedback": {"barriers": len(fb),
+                         "confirmed": sum(v["status"] == "confirmed" for v in fb.values()),
+                         "rejected": sum(v["status"] == "rejected" for v in fb.values())},
+        }
+
+
+def create_app(settings: Settings) -> FastAPI:
+    data = SiteData(settings)
+    feedback = FeedbackStore(settings.paths.data / "feedback.sqlite")
 
     app = FastAPI(title="access-map", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -121,11 +172,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/config")
     def config():
-        p = settings.project
-        return {"area": {"name": p.area.name, "bbox": p.area.bbox},
-                "languages": p.ui.languages, "language": p.ui.language,
-                "types": p.detection.types, "profiles": p.profiles,
-                "features": p.app.features, "routing": False}
+        return data.config()
 
     @app.get("/api/barriers")
     def barriers(types: str | None = Query(None, description="comma-separated types"),
@@ -133,7 +180,7 @@ def create_app(settings: Settings) -> FastAPI:
                  include_unsnapped: bool = True, include_rejected: bool = True):
         wanted = set(types.split(",")) if types else None
         feats = []
-        for f in all_barriers():
+        for f in data.barriers(feedback.summary()):
             p = f["properties"]
             if wanted is not None and p["type"] not in wanted:
                 continue
@@ -146,11 +193,11 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/network")
     def get_network():
-        return network.get()
+        return data.network()
 
     @app.get("/api/frames/{frame_id}")
     def frame(frame_id: str):
-        fr = frames().get(frame_id)
+        fr = data.frames().get(frame_id)
         if fr is None:
             raise HTTPException(404, "unknown frame")
         return {"frame_id": frame_id, "image_id": fr["image_id"],
@@ -161,7 +208,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/frames/{frame_id}/image")
     def frame_image(frame_id: str):
-        fr = frames().get(frame_id)  # only manifest frames: no user-controlled paths
+        fr = data.frames().get(frame_id)  # only manifest frames: no user-controlled paths
         path = settings.root / fr["path"] if fr else None
         if path is None or not path.is_file():
             raise HTTPException(404, "unknown frame")
@@ -170,39 +217,18 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/stats")
     def stats():
-        feats = all_barriers()
-        by_type = Counter(f["properties"]["type"] for f in feats)
-        unsn = Counter(f["properties"]["type"] for f in feats if not f["properties"]["snapped"])
-        fb = feedback.summary()
-        g = settings.project.gemini
-        m = metrics.get().get(f"{g.model}/{g.prompt}", {})
-        final = m.get("holdout") or m.get("tuning") or {}
-        ledger = settings.paths.cache / "gemini_calls.jsonl"
-        calls = 0
-        if ledger.is_file():
-            with open(ledger, encoding="utf-8") as fh:
-                calls = sum(json.loads(line).get("calls", 1) for line in fh if line.strip())
-        return {
-            "barriers": len(feats),
-            "snapped": sum(f["properties"]["snapped"] for f in feats),
-            "multi_view": sum(f["properties"]["n_views"] > 1 for f in feats),
-            "by_type": {t: {"total": n, "unsnapped": unsn.get(t, 0)}
-                        for t, n in by_type.most_common()},
-            "frames": len(frames()),
-            "model": g.model, "prompt": g.prompt,
-            "precision": final.get("labels", {}).get("micro", {}).get("precision"),
-            "recall": final.get("labels", {}).get("micro", {}).get("recall"),
-            "gemini_calls": {"used": calls, "budget": settings.project.budget.max_gemini_calls},
-            "feedback": {"barriers": len(fb),
-                         "confirmed": sum(s["status"] == "confirmed" for s in fb.values()),
-                         "rejected": sum(s["status"] == "rejected" for s in fb.values())},
-        }
+        return data.stats(feedback.summary())
+
+    @app.get("/api/feedback")
+    def get_feedback():
+        """barrier_id -> {confirm, reject, status}; the Vercel function answers the same."""
+        return feedback.summary()
 
     @app.post("/api/feedback", status_code=201)
     def post_feedback(fb: Feedback):
         if "feedback" not in settings.project.app.features:
             raise HTTPException(404, "feedback is disabled")
-        if not any(f["properties"]["id"] == fb.barrier_id for f in all_barriers()):
+        if not any(f["properties"]["id"] == fb.barrier_id for f in data.barriers()):
             raise HTTPException(404, "unknown barrier")
         fid = feedback.add(fb)
         return JSONResponse({"id": fid, "barrier": feedback.summary()[fb.barrier_id]},

@@ -22,6 +22,11 @@ reports/qa/
 *.sqlite
 *.db
 
+# Static site build output (accessmap export-site) and Vercel link
+site/
+.vercel/
+node_modules/
+
 # Editors / OS
 .vscode/
 .idea/

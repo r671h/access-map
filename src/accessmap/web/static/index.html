@@ -15,6 +15,7 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* author display rules must not un-hide elements */
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
   body { display: flex; overflow: hidden; }
   #panel { width: var(--panel-w); height: 100%; overflow-y: auto; background: var(--panel);
@@ -186,7 +187,8 @@
 
   <footer>
     <span data-i18n="attribution"></span>
-    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> ·
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors ·
+    <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ·
     <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> (CC BY-SA 4.0)
   </footer>
 </aside>
@@ -209,7 +211,7 @@ const I18N = {
     reject: "✗ Wrong", close: "Close", commentPh: "Optional comment (what is really there?)",
     photoOf: (i, n) => `photo ${i} of ${n}`, photosN: n => `${n} photo${n === 1 ? "" : "s"}`,
     snapped: m => `attached (${m} m)`, unsnapped: "not attached — ignored by routing",
-    thanks: "Thanks — saved.", failed: "Could not save feedback.",
+    thanks: "Thanks — saved.", failed: "Could not save feedback.", tooMany: "Too much feedback from you in the last hour — please try later.",
     status: { confirmed: "confirmed", rejected: "rejected", disputed: "disputed" },
     note: (m, p, c, b) => `Model ${m}, prompt ${p}. Gemini calls ${c}/${b}. Precision from hand-labelled test frames.`,
     attribution: "Map data and photos:",
@@ -230,7 +232,7 @@ const I18N = {
     reject: "✗ Falsch", close: "Schließen", commentPh: "Optionaler Kommentar (was ist wirklich dort?)",
     photoOf: (i, n) => `Foto ${i} von ${n}`, photosN: n => `${n} Foto${n === 1 ? "" : "s"}`,
     snapped: m => `verbunden (${m} m)`, unsnapped: "nicht verbunden — beim Routing ignoriert",
-    thanks: "Danke — gespeichert.", failed: "Rückmeldung konnte nicht gespeichert werden.",
+    thanks: "Danke — gespeichert.", failed: "Rückmeldung konnte nicht gespeichert werden.", tooMany: "Zu viele Rückmeldungen in der letzten Stunde — bitte später erneut versuchen.",
     status: { confirmed: "bestätigt", rejected: "abgelehnt", disputed: "umstritten" },
     note: (m, p, c, b) => `Modell ${m}, Prompt ${p}. Gemini-Aufrufe ${c}/${b}. Präzision aus handbeschrifteten Testbildern.`,
     attribution: "Kartendaten und Fotos:",
@@ -242,7 +244,20 @@ const I18N = {
   },
 };
 
-const state = { lang: "en", cfg: null, all: [], enabled: new Set(), selected: null, view: 0, stats: null };
+// Local (`accessmap serve`) reads the FastAPI endpoints; the exported Vercel site reads static
+// JSON and photos. Feedback is /api/feedback in both (FastAPI locally, a Vercel function online).
+const STATIC_SITE = document.querySelector('meta[name="accessmap-mode"]')?.content === "static";
+const API = STATIC_SITE ? {
+  config: "data/config.json", barriers: "data/barriers.json", network: "data/network.json",
+  stats: "data/stats.json", photo: id => `photos/${encodeURIComponent(id)}.jpg`,
+} : {
+  config: "/api/config", barriers: "/api/barriers", network: "/api/network",
+  stats: "/api/stats", photo: id => `/api/frames/${encodeURIComponent(id)}/image`,
+};
+const FEEDBACK_URL = "/api/feedback";
+
+const state = { lang: "en", cfg: null, all: [], enabled: new Set(), selected: null, view: 0, stats: null,
+  feedbackOnline: true };
 const $ = id => document.getElementById(id);
 const t = () => I18N[state.lang];
 
@@ -251,13 +266,8 @@ function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* priva
 
 const map = new maplibregl.Map({
   container: "map",
-  style: {
-    version: 8,
-    sources: { osm: { type: "raster", tileSize: 256, maxzoom: 19,
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } },
-    layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.6, "raster-opacity": 0.9 } }],
-  },
+  // OpenFreeMap: free vector tiles from OSM data, allowed for public apps; attribution comes with the style.
+  style: "https://tiles.openfreemap.org/styles/positron",
   center: [8.5335, 52.024], zoom: 15, attributionControl: { compact: true },
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -336,7 +346,7 @@ function renderDetail() {
   const p = f.properties, L = t(), views = p.views || [];
   const v = views[state.view] || { frame_id: p.best_frame_id, box_2d: null };
   const img = $("photo-img");
-  img.src = `/api/frames/${encodeURIComponent(v.frame_id)}/image`;
+  img.src = API.photo(v.frame_id);
   img.alt = `${L.types_[p.type]} — ${p["description_" + state.lang] || ""}`;
   const box = $("photo-box");
   if (v.box_2d) {
@@ -362,14 +372,16 @@ function renderDetail() {
   $("d-measure").previousElementSibling.hidden = $("d-measure").hidden = !m.length;
   $("d-seen").textContent = (v.captured_at || p.last_seen || "").slice(0, 10);
   $("d-mapillary").href = `https://www.mapillary.com/app/?pKey=${encodeURIComponent(v.frame_id.split("_")[0])}`;
-  $("fb").hidden = !state.cfg.features.includes("feedback");
+  $("fb").hidden = !state.cfg.features.includes("feedback") || !state.feedbackOnline;
 }
 
 async function sendFeedback(verdict) {
   const p = state.selected.properties;
   try {
-    const r = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
+    const r = await fetch(FEEDBACK_URL, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ barrier_id: p.id, verdict, comment: $("fb-comment").value }) });
+    if (r.status === 503) { state.feedbackOnline = false; renderDetail(); return; }
+    if (r.status === 429) { $("fb-msg").textContent = t().tooMany; return; }
     if (!r.ok) throw new Error(r.status);
     const res = await r.json();
     p.feedback = res.barrier;
@@ -395,16 +407,25 @@ function renderStats() {
   $("s-precision").textContent = s.precision != null ? Math.round(s.precision * 100) + "%" : "–";
   $("s-note").textContent = t().note(s.model, s.prompt, s.gemini_calls.used, s.gemini_calls.budget);
 }
-async function loadStats() { state.stats = await getJSON("/api/stats"); renderStats(); }
+async function loadStats() { state.stats = await getJSON(API.stats); renderStats(); }
+
+// Latest confirm/reject counts; the static barrier file carries none.
+async function loadFeedback() {
+  try {
+    const summary = await getJSON(FEEDBACK_URL);
+    for (const f of state.all) f.properties.feedback = summary[f.properties.id] || null;
+  } catch { state.feedbackOnline = false; }
+}
 
 async function init() {
-  state.cfg = await getJSON("/api/config");
+  state.cfg = await getJSON(API.config);
   state.enabled = new Set(state.cfg.types);
   $("area").textContent = state.cfg.area.name;
   const [x0, y0, x1, y1] = state.cfg.area.bbox;
   map.fitBounds([[x0, y0], [x1, y1]], { padding: 20, duration: 0 });
-  const [barriers, network] = await Promise.all([getJSON("/api/barriers"), getJSON("/api/network")]);
+  const [barriers, network] = await Promise.all([getJSON(API.barriers), getJSON(API.network)]);
   state.all = barriers.features;
+  await loadFeedback();
 
   map.addSource("network", { type: "geojson", data: network });
   map.addLayer({ id: "network", type: "line", source: "network",

@@ -3,7 +3,7 @@
 UV ?= uv
 RUN = $(UV) run
 
-.PHONY: setup check coverage fetch-osm fetch-images pilot analyze geolocate evaluate serve test lint
+.PHONY: setup check coverage fetch-osm fetch-images pilot analyze geolocate evaluate serve export-site deploy test lint
 
 setup:
 	$(UV) sync --extra dev
@@ -34,6 +34,12 @@ evaluate:
 
 serve:
 	$(RUN) accessmap serve --host $${HOST:-127.0.0.1}
+
+export-site:
+	$(RUN) accessmap export-site
+
+deploy: export-site
+	npx vercel deploy site --prod
 
 test:
 	$(RUN) pytest
