@@ -19,11 +19,11 @@ ui:
 gemini:
   # Phase 3 pilot: 30 frames on each candidate, then the user picks one.
   # Model ids are confirmed against client.models.list() in phase 0.
-  model: null
+  model: gemini-3.8-flash      # chosen after the phase 3 pilot (DECISIONS.md)
   pilot_candidates: [gemini-3.8-flash, gemini-3.1-flash-lite]
   prefer_free_tier: true
   rpm: 60                  # lowered in phase 0 to the key's real limit
-  thinking: minimal
+  thinking: low            # 3.8 Flash rejects minimal
 
 budget:
   max_images: 300

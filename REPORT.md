@@ -34,3 +34,20 @@ Visual check of `reports/qa/pilot_compare_1..5.jpg`:
   `raised_curb`, although the definition means curbs at crossing points/corners.
   Main target for prompt tuning in phase 5.
 - 3.8 Flash rejects `thinking_level=MINIMAL`; the client steps up to LOW automatically.
+
+## Gemini full run (phase 3, gemini-3.8-flash, prompt v1, 333 frames)
+- 333/333 valid (100%), 302 usable, 397 features, mean confidence 0.83; 303 new calls
+  (366/1,200 used in total). Paid-tier equivalent ≈ $0.0025/frame, $0.83 for the area.
+- Features: raised_curb 158, narrow_passage 107, rough_surface 55, curb_ramp 37, stairs 18,
+  no_sidewalk 11, step 11. Permanence: 89 of 107 narrow_passage and 5 of 11 no_sidewalk are
+  `temporary` (construction fences, sign bases, bins); geolocation keeps permanent ones only.
+- Per-type sheets `reports/qa/types_<type>.jpg` (random 12 per type, opened and checked):
+  - Boxes line up with the objects for every type; box order handling is correct.
+  - raised_curb: dominated by ordinary along-street curbs (the known v1 issue); one inside a
+    car park. Phase 5 target.
+  - curb_ramp: mostly real lowered kerbs at crossings; one grass verge mislabelled.
+  - stairs: real, but most are building-entrance stairs next to the sidewalk, not on the
+    walking route; step: mixed (entrance steps, a sign base, a planter edge).
+  - rough_surface: sett/cobblestone sidewalks and gutters, plausible.
+  - no_sidewalk: 4 of 11 are car-park ramp frames from a dashcam with a blocked windshield
+    that Gemini still called usable; 5 are construction fences (temporary).

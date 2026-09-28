@@ -204,3 +204,36 @@ def compare_sheets(settings: Settings, models: list[str], frame_ids: list[str],
                             + f" (sheet {i // per_sheet + 1})")
         out.append(path)
     return out
+
+
+def type_sheets(settings: Settings, per_type: int = 12, seed: int = PILOT_SEED) -> list[Path]:
+    """One sheet per barrier type from detections.jsonl: a random sample of frames with that
+    type (not the most confident ones, so the sheet shows typical quality). Only boxes of
+    the sheet's type are drawn."""
+    from accessmap.eval.contact import Box, Tile, contact_sheet
+
+    path = settings.paths.processed / "detections.jsonl"
+    with open(path, encoding="utf-8") as f:
+        frames = [json.loads(line) for line in f if line.strip()]
+    rng = random.Random(seed)
+    out = []
+    for btype in settings.project.detection.types:
+        hits = [fr for fr in frames if any(ft["type"] == btype for ft in fr["features"])]
+        if not hits:
+            continue
+        sample = rng.sample(hits, min(per_type, len(hits)))
+        tiles = []
+        for fr in sample:
+            boxes = [Box(ft["box_2d"], f"{ft['type']} {ft['confidence']:.2f}", ft["type"])
+                     for ft in fr["features"] if ft["type"] == btype]
+            d = next(ft for ft in fr["features"] if ft["type"] == btype)
+            dist = d.get("estimated_distance_m")
+            caption = f"{fr['frame_id'][-10:]} · {len(boxes)}× · " + (
+                f"{dist:.0f} m · " if dist else "") + d["description_en"]
+            tiles.append(Tile(settings.root / fr["path"], caption, boxes))
+        p = settings.paths.qa / f"types_{btype}.jpg"
+        contact_sheet(tiles, p, cols=4,
+                      title=f"{btype}: {len(sample)} of {len(hits)} frames "
+                            f"({fr['model']}, prompt {fr['prompt_version']})")
+        out.append(p)
+    return out
