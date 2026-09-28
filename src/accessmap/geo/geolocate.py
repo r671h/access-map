@@ -102,6 +102,11 @@ def to_feature(c: dict, snap) -> dict:
         "image_ids": sorted({m["image_id"] for m in c["members"]}),
         "last_seen": max(m["captured_at"] for m in c["members"]),
         "distance_sources": dict(Counter(m["distance_source"] for m in c["members"])),
+        # Every sighting, best first: lets the UI show each photo with its box.
+        "views": [{"frame_id": m["frame_id"], "box_2d": m["box_2d"],
+                   "confidence": m["raw_confidence"], "distance_m": round(m["distance_m"], 1),
+                   "captured_at": m["captured_at"]}
+                  for m in sorted(c["members"], key=lambda m: -m["raw_confidence"])],
     }
     return {"type": "Feature", "properties": props,
             "geometry": {"type": "Point", "coordinates": [round(lon, 7), round(lat, 7)]}}

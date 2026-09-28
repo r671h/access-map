@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>access-map</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f5fbf%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #fbfbfa; --text: #1d1d1b; --muted: #62625d; --line: #e3e2dd;
+    --accent: #1f5fbf; --accent-text: #ffffff; --danger: #b3261e; --ok: #1a7f3c;
+    --panel-w: 380px; --radius: 10px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+  body { display: flex; overflow: hidden; }
+  #panel { width: var(--panel-w); height: 100%; overflow-y: auto; background: var(--panel);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column; z-index: 2; }
+  #map { flex: 1; height: 100%; }
+  header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+  .area { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .lang button { border: 0; background: transparent; padding: 4px 10px; font: inherit; font-size: 13px;
+    cursor: pointer; color: var(--muted); }
+  .lang button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  section { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+    margin: 0 0 8px; font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 11px; color: var(--muted); }
+  .types { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .types label { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer;
+    font-size: 14px; border-radius: 6px; }
+  .types label:hover { background: #f0efeb; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+  .count { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 8px; }
+  .row input[type=range] { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.4; }
+  #list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  #list button { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center;
+    border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 7px 10px;
+    font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
+  #list button:hover, #list button[aria-current="true"] { background: #eef3fb; }
+  #list .conf { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #detail[hidden] { display: none; }
+  .photo { position: relative; border-radius: 8px; overflow: hidden; background: #222; line-height: 0; }
+  .photo img { width: 100%; height: auto; display: block; }
+  .box { position: absolute; border: 3px solid #ffd400; box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000;
+    border-radius: 3px; pointer-events: none; }
+  .photo-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 6px;
+    font-size: 12px; color: var(--muted); gap: 6px; }
+  .detail-head { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+  .detail-head h3 { margin: 0; font-size: 17px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eceae4; color: var(--muted); }
+  .badge.rejected { background: #f9dedc; color: var(--danger); }
+  .badge.confirmed { background: #dcf1e2; color: var(--ok); }
+  .desc { font-size: 14px; line-height: 1.45; margin: 6px 0; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; margin: 8px 0; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .confbar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
+  .confbar i { display: block; height: 100%; background: var(--accent); }
+  .btn { font: inherit; font-size: 14px; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .btn:hover { border-color: #bdbbb3; }
+  .btn.small { padding: 3px 9px; font-size: 13px; }
+  .btn.ok { border-color: var(--ok); color: var(--ok); }
+  .btn.no { border-color: var(--danger); color: var(--danger); }
+  .fb { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .fb textarea { grid-column: 1 / -1; font: inherit; font-size: 13px; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 8px; resize: vertical; min-height: 34px; }
+  .fb-msg { font-size: 12px; color: var(--muted); grid-column: 1 / -1; min-height: 1em; }
+  a { color: var(--accent); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; }
+  select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); }
+  footer { padding: 10px 16px 16px; font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: auto; }
+  #sheet-toggle { display: none; }
+  .maplibregl-popup-content { font: 13px system-ui, sans-serif; padding: 6px 10px; }
+
+  /* Phones: map on top, panel as a bottom sheet. */
+  @media (max-width: 700px) {
+    body { flex-direction: column; }
+    #map { order: 1; flex: 1; min-height: 0; }
+    #panel { order: 2; width: 100%; height: auto; max-height: 55vh; border-right: 0;
+      border-top: 1px solid var(--line); border-radius: 14px 14px 0 0;
+      box-shadow: 0 -4px 16px rgba(0,0,0,.08); transition: max-height .2s ease; }
+    #panel.collapsed { max-height: 118px; overflow: hidden; }
+    #sheet-toggle { display: block; width: 100%; border: 0; background: transparent; padding: 6px 0 0;
+      cursor: pointer; }
+    #sheet-toggle span { display: block; width: 40px; height: 4px; border-radius: 2px;
+      background: #c9c7c0; margin: 0 auto; }
+    #list { max-height: 160px; }
+  }
+</style>
+</head>
+<body>
+<aside id="panel" aria-label="Controls and details">
+  <button id="sheet-toggle" aria-label="Expand or collapse panel" aria-expanded="true"><span></span></button>
+  <header>
+    <div class="title-row">
+      <h1>access-map</h1>
+      <div class="lang" role="group" aria-label="Language">
+        <button data-lang="en" aria-pressed="true">EN</button>
+        <button data-lang="de" aria-pressed="false">DE</button>
+      </div>
+    </div>
+    <div class="area" id="area"></div>
+  </header>
+
+  <section id="detail" hidden aria-live="polite">
+    <div class="photo" id="photo"><img id="photo-img" alt=""><div class="box" id="photo-box"></div></div>
+    <div class="photo-nav">
+      <button class="btn small" id="prev-view" aria-label="Previous photo">‹</button>
+      <span id="view-info"></span>
+      <button class="btn small" id="next-view" aria-label="Next photo">›</button>
+    </div>
+    <div class="detail-head">
+      <span class="dot" id="d-dot"></span><h3 id="d-type"></h3><span class="badge" id="d-status"></span>
+    </div>
+    <p class="desc" id="d-desc"></p>
+    <dl>
+      <dt data-i18n="confidence"></dt><dd><span id="d-conf"></span><div class="confbar"><i id="d-confbar"></i></div></dd>
+      <dt data-i18n="views"></dt><dd id="d-views"></dd>
+      <dt data-i18n="network"></dt><dd id="d-snap"></dd>
+      <dt data-i18n="measure"></dt><dd id="d-measure"></dd>
+      <dt data-i18n="lastSeen"></dt><dd id="d-seen"></dd>
+    </dl>
+    <a id="d-mapillary" target="_blank" rel="noopener" data-i18n="openMapillary"></a>
+    <div class="fb" id="fb">
+      <button class="btn ok" id="fb-confirm" data-i18n="confirm"></button>
+      <button class="btn no" id="fb-reject" data-i18n="reject"></button>
+      <textarea id="fb-comment" rows="1" maxlength="500"></textarea>
+      <div class="fb-msg" id="fb-msg" role="status"></div>
+    </div>
+    <p class="hint"><button class="btn small" id="close-detail" data-i18n="close"></button></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="overview"></h2>
+    <div class="stats">
+      <div class="stat"><b id="s-barriers">–</b><span data-i18n="barriers"></span></div>
+      <div class="stat"><b id="s-frames">–</b><span data-i18n="photos"></span></div>
+      <div class="stat"><b id="s-precision">–</b><span data-i18n="precision"></span></div>
+    </div>
+    <p class="hint" id="s-note"></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="types"></h2>
+    <ul class="types" id="types"></ul>
+    <div class="row">
+      <label for="minconf" data-i18n="minConf"></label>
+      <input type="range" id="minconf" min="0" max="0.95" step="0.05" value="0">
+      <output id="minconf-out">0.00</output>
+    </div>
+    <div class="row"><label><input type="checkbox" id="show-unsnapped" checked> <span data-i18n="showUnsnapped"></span></label></div>
+    <div class="row"><label><input type="checkbox" id="show-rejected"> <span data-i18n="showRejected"></span></label></div>
+    <div class="row"><label><input type="checkbox" id="show-network" checked> <span data-i18n="showNetwork"></span></label></div>
+    <p class="hint" data-i18n="legendHint"></p>
+  </section>
+
+  <section>
+    <h2 data-i18n="route"></h2>
+    <div class="row">
+      <label for="profile" data-i18n="profile"></label>
+      <select id="profile" disabled></select>
+    </div>
+    <p class="hint" data-i18n="routeSoon"></p>
+  </section>
+
+  <section>
+    <h2><span data-i18n="list"></span> (<span id="list-count">0</span>)</h2>
+    <ul id="list"></ul>
+  </section>
+
+  <footer>
+    <span data-i18n="attribution"></span>
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> ·
+    <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> (CC BY-SA 4.0)
+  </footer>
+</aside>
+<main id="map" aria-label="Map"></main>
+
+<script>
+const COLORS = {
+  curb_ramp: "#1a9850", raised_curb: "#d73027", step: "#f46d43", stairs: "#a50026",
+  narrow_passage: "#7b3294", steep_slope: "#2166ac", rough_surface: "#8c510a", no_sidewalk: "#1d1d1b",
+};
+const I18N = {
+  en: {
+    overview: "Overview", barriers: "barriers", photos: "photos", precision: "precision",
+    types: "Barrier types", minConf: "Min. confidence", showUnsnapped: "Show barriers off the walking network",
+    showRejected: "Show barriers rejected by users", showNetwork: "Show walking network",
+    legendHint: "Faded dots are not attached to the walking network and are ignored by routing. Bigger dot = higher confidence.",
+    route: "Route", profile: "Profile", routeSoon: "Route comparison arrives with the routing step (phase 6).",
+    list: "Barriers", confidence: "Confidence", views: "Seen in", network: "Network", measure: "Size",
+    lastSeen: "Photo date", openMapillary: "Open this photo on Mapillary ↗", confirm: "✓ Correct",
+    reject: "✗ Wrong", close: "Close", commentPh: "Optional comment (what is really there?)",
+    photoOf: (i, n) => `photo ${i} of ${n}`, photosN: n => `${n} photo${n === 1 ? "" : "s"}`,
+    snapped: m => `attached (${m} m)`, unsnapped: "not attached — ignored by routing",
+    thanks: "Thanks — saved.", failed: "Could not save feedback.",
+    status: { confirmed: "confirmed", rejected: "rejected", disputed: "disputed" },
+    note: (m, p, c, b) => `Model ${m}, prompt ${p}. Gemini calls ${c}/${b}. Precision from hand-labelled test frames.`,
+    attribution: "Map data and photos:",
+    profiles: { wheelchair: "Wheelchair", stroller: "Stroller", suitcase: "Rolling suitcase" },
+    types_: { curb_ramp: "Curb ramp", raised_curb: "Raised curb", step: "Step", stairs: "Stairs",
+      narrow_passage: "Narrow passage", steep_slope: "Steep slope", rough_surface: "Rough surface",
+      no_sidewalk: "No sidewalk" },
+    height: h => `height ≈ ${h} cm`, width: w => `clear width ≈ ${w} m`,
+  },
+  de: {
+    overview: "Überblick", barriers: "Barrieren", photos: "Fotos", precision: "Präzision",
+    types: "Barrierearten", minConf: "Mind. Konfidenz", showUnsnapped: "Barrieren abseits des Fußwegenetzes zeigen",
+    showRejected: "Von Nutzern abgelehnte Barrieren zeigen", showNetwork: "Fußwegenetz zeigen",
+    legendHint: "Blasse Punkte sind nicht mit dem Fußwegenetz verbunden und werden beim Routing ignoriert. Größerer Punkt = höhere Konfidenz.",
+    route: "Route", profile: "Profil", routeSoon: "Der Routenvergleich kommt mit dem Routing-Schritt (Phase 6).",
+    list: "Barrieren", confidence: "Konfidenz", views: "Gesehen auf", network: "Netz", measure: "Maße",
+    lastSeen: "Fotodatum", openMapillary: "Dieses Foto auf Mapillary öffnen ↗", confirm: "✓ Stimmt",
+    reject: "✗ Falsch", close: "Schließen", commentPh: "Optionaler Kommentar (was ist wirklich dort?)",
+    photoOf: (i, n) => `Foto ${i} von ${n}`, photosN: n => `${n} Foto${n === 1 ? "" : "s"}`,
+    snapped: m => `verbunden (${m} m)`, unsnapped: "nicht verbunden — beim Routing ignoriert",
+    thanks: "Danke — gespeichert.", failed: "Rückmeldung konnte nicht gespeichert werden.",
+    status: { confirmed: "bestätigt", rejected: "abgelehnt", disputed: "umstritten" },
+    note: (m, p, c, b) => `Modell ${m}, Prompt ${p}. Gemini-Aufrufe ${c}/${b}. Präzision aus handbeschrifteten Testbildern.`,
+    attribution: "Kartendaten und Fotos:",
+    profiles: { wheelchair: "Rollstuhl", stroller: "Kinderwagen", suitcase: "Rollkoffer" },
+    types_: { curb_ramp: "Abgesenkter Bordstein", raised_curb: "Hoher Bordstein", step: "Stufe",
+      stairs: "Treppe", narrow_passage: "Engstelle", steep_slope: "Starke Steigung",
+      rough_surface: "Unebener Belag", no_sidewalk: "Kein Gehweg" },
+    height: h => `Höhe ≈ ${h} cm`, width: w => `Durchgang ≈ ${w} m`,
+  },
+};
+
+const state = { lang: "en", cfg: null, all: [], enabled: new Set(), selected: null, view: 0, stats: null };
+const $ = id => document.getElementById(id);
+const t = () => I18N[state.lang];
+
+function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: { osm: { type: "raster", tileSize: 256, maxzoom: 19,
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' } },
+    layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.6, "raster-opacity": 0.9 } }],
+  },
+  center: [8.5335, 52.024], zoom: 15, attributionControl: { compact: true },
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
+
+function colorExpr() {
+  const e = ["match", ["get", "type"]];
+  for (const [k, v] of Object.entries(COLORS)) e.push(k, v);
+  e.push("#888"); return e;
+}
+
+function visible(f) {
+  const p = f.properties;
+  if (!state.enabled.has(p.type)) return false;
+  if (p.confidence < +$("minconf").value) return false;
+  if (!$("show-unsnapped").checked && !p.snapped) return false;
+  if (!$("show-rejected").checked && p.feedback && p.feedback.status === "rejected") return false;
+  return true;
+}
+
+function refresh() {
+  const feats = state.all.filter(visible);
+  const src = map.getSource("barriers");
+  // Flatten for the style: nested objects are awkward in MapLibre expressions.
+  if (src) src.setData({ type: "FeatureCollection", features: feats.map(f => ({ ...f,
+    properties: { id: f.properties.id, type: f.properties.type, confidence: f.properties.confidence,
+      snapped: f.properties.snapped, fb_status: (f.properties.feedback || {}).status || "" } })) });
+  if (map.getLayer("network")) map.setLayoutProperty("network", "visibility", $("show-network").checked ? "visible" : "none");
+  renderList(feats);
+  renderTypes();
+}
+
+function renderTypes() {
+  const counts = {};
+  for (const f of state.all) counts[f.properties.type] = (counts[f.properties.type] || 0) + 1;
+  const ul = $("types"); ul.innerHTML = "";
+  for (const type of state.cfg.types) {
+    const li = document.createElement("li");
+    li.innerHTML = `<label><input type="checkbox" ${state.enabled.has(type) ? "checked" : ""}>
+      <span class="dot" style="background:${COLORS[type]}"></span>${t().types_[type]}
+      <span class="count">${counts[type] || 0}</span></label>`;
+    li.querySelector("input").addEventListener("change", e => {
+      e.target.checked ? state.enabled.add(type) : state.enabled.delete(type); refresh();
+    });
+    ul.appendChild(li);
+  }
+}
+
+function renderList(feats) {
+  $("list-count").textContent = feats.length;
+  const ul = $("list"); ul.innerHTML = "";
+  const sorted = [...feats].sort((a, b) => b.properties.confidence - a.properties.confidence);
+  for (const f of sorted) {
+    const p = f.properties, li = document.createElement("li"), b = document.createElement("button");
+    b.innerHTML = `<span class="dot" style="background:${COLORS[p.type]};opacity:${p.snapped ? 1 : .45}"></span>
+      ${t().types_[p.type]}<span class="conf">${p.confidence.toFixed(2)} · ${p.n_views}×</span>`;
+    if (state.selected && state.selected.properties.id === p.id) b.setAttribute("aria-current", "true");
+    b.addEventListener("click", () => select(f, true));
+    li.appendChild(b); ul.appendChild(li);
+  }
+}
+
+function select(f, fly) {
+  state.selected = f; state.view = 0;
+  map.getSource("selected").setData({ type: "FeatureCollection", features: [f] });
+  if (fly) map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 17.5) });
+  $("detail").hidden = false; $("panel").classList.remove("collapsed");
+  $("panel").scrollTo({ top: 0, behavior: "smooth" });
+  $("fb-msg").textContent = ""; $("fb-comment").value = "";
+  renderDetail(); renderList(state.all.filter(visible));
+}
+
+function renderDetail() {
+  const f = state.selected; if (!f) return;
+  const p = f.properties, L = t(), views = p.views || [];
+  const v = views[state.view] || { frame_id: p.best_frame_id, box_2d: null };
+  const img = $("photo-img");
+  img.src = `/api/frames/${encodeURIComponent(v.frame_id)}/image`;
+  img.alt = `${L.types_[p.type]} — ${p["description_" + state.lang] || ""}`;
+  const box = $("photo-box");
+  if (v.box_2d) {
+    const [y0, x0, y1, x1] = v.box_2d;
+    Object.assign(box.style, { display: "block", top: y0 / 10 + "%", left: x0 / 10 + "%",
+      height: (y1 - y0) / 10 + "%", width: (x1 - x0) / 10 + "%" });
+  } else box.style.display = "none";
+  $("view-info").textContent = views.length ? `${L.photoOf(state.view + 1, views.length)} · ${v.confidence?.toFixed(2) ?? ""} · ${v.distance_m ?? "?"} m` : "";
+  $("prev-view").disabled = state.view <= 0; $("next-view").disabled = state.view >= views.length - 1;
+  $("d-dot").style.background = COLORS[p.type];
+  $("d-type").textContent = L.types_[p.type];
+  const st = p.feedback && p.feedback.status;
+  $("d-status").textContent = st ? `${L.status[st]} (${p.feedback.confirm}✓ ${p.feedback.reject}✗)` : "";
+  $("d-status").className = "badge " + (st || ""); $("d-status").hidden = !st;
+  $("d-desc").textContent = p["description_" + state.lang] || p.description_en;
+  $("d-conf").textContent = p.confidence.toFixed(2);
+  $("d-confbar").style.width = Math.round(p.confidence * 100) + "%";
+  $("d-views").textContent = L.photosN(views.length || p.n_views);
+  $("d-snap").textContent = p.snapped ? L.snapped(p.snap_distance_m) : L.unsnapped;
+  const m = [p.estimated_height_cm != null ? L.height(p.estimated_height_cm) : null,
+             p.estimated_width_m != null ? L.width(p.estimated_width_m) : null].filter(Boolean);
+  $("d-measure").textContent = m.join(", ") || "—";
+  $("d-measure").previousElementSibling.hidden = $("d-measure").hidden = !m.length;
+  $("d-seen").textContent = (v.captured_at || p.last_seen || "").slice(0, 10);
+  $("d-mapillary").href = `https://www.mapillary.com/app/?pKey=${encodeURIComponent(v.frame_id.split("_")[0])}`;
+  $("fb").hidden = !state.cfg.features.includes("feedback");
+}
+
+async function sendFeedback(verdict) {
+  const p = state.selected.properties;
+  try {
+    const r = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ barrier_id: p.id, verdict, comment: $("fb-comment").value }) });
+    if (!r.ok) throw new Error(r.status);
+    const res = await r.json();
+    p.feedback = res.barrier;
+    $("fb-msg").textContent = t().thanks; $("fb-comment").value = "";
+    renderDetail(); refresh(); loadStats();
+  } catch { $("fb-msg").textContent = t().failed; }
+}
+
+function applyLang(lang) {
+  state.lang = lang; storageSet("accessmap.lang", lang);
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === lang));
+  document.querySelectorAll("[data-i18n]").forEach(el => { const v = t()[el.dataset.i18n]; if (typeof v === "string") el.textContent = v; });
+  $("fb-comment").placeholder = t().commentPh;
+  const sel = $("profile"); sel.innerHTML = "";
+  for (const p of state.cfg.profiles) { const o = document.createElement("option"); o.value = p; o.textContent = t().profiles[p] || p; sel.appendChild(o); }
+  renderStats(); refresh(); renderDetail();
+}
+
+function renderStats() {
+  const s = state.stats; if (!s) return;
+  $("s-barriers").textContent = s.barriers; $("s-frames").textContent = s.frames;
+  $("s-precision").textContent = s.precision != null ? Math.round(s.precision * 100) + "%" : "–";
+  $("s-note").textContent = t().note(s.model, s.prompt, s.gemini_calls.used, s.gemini_calls.budget);
+}
+async function loadStats() { state.stats = await getJSON("/api/stats"); renderStats(); }
+
+async function init() {
+  state.cfg = await getJSON("/api/config");
+  state.enabled = new Set(state.cfg.types);
+  $("area").textContent = state.cfg.area.name;
+  const [x0, y0, x1, y1] = state.cfg.area.bbox;
+  map.fitBounds([[x0, y0], [x1, y1]], { padding: 20, duration: 0 });
+  const [barriers, network] = await Promise.all([getJSON("/api/barriers"), getJSON("/api/network")]);
+  state.all = barriers.features;
+
+  map.addSource("network", { type: "geojson", data: network });
+  map.addLayer({ id: "network", type: "line", source: "network",
+    paint: { "line-color": "#3b6fb6", "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 2.5], "line-opacity": 0.45 } });
+  map.addSource("barriers", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({ id: "selected", type: "circle", source: "selected",
+    paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#1f5fbf", "circle-stroke-width": 3 } });
+  map.addLayer({ id: "barriers", type: "circle", source: "barriers", paint: {
+    "circle-color": ["case", ["==", ["get", "fb_status"], "rejected"], "#9a9a94", colorExpr()],
+    "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, ["+", 2, ["*", 4, ["get", "confidence"]]], 18, ["+", 5, ["*", 8, ["get", "confidence"]]]],
+    "circle-opacity": ["case", ["get", "snapped"], 0.95, 0.4],
+    "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5 } });
+
+  const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+  map.on("mouseenter", "barriers", e => {
+    map.getCanvas().style.cursor = "pointer";
+    const p = e.features[0].properties;
+    hover.setLngLat(e.features[0].geometry.coordinates).setText(`${t().types_[p.type]} · ${(+p.confidence).toFixed(2)}`).addTo(map);
+  });
+  map.on("mouseleave", "barriers", () => { map.getCanvas().style.cursor = ""; hover.remove(); });
+  map.on("click", "barriers", e => {
+    const id = e.features[0].properties.id;
+    select(state.all.find(f => f.properties.id === id), false);
+  });
+
+  const saved = storageGet("accessmap.lang");
+  applyLang(state.cfg.languages.includes(saved) ? saved : state.cfg.language);
+  loadStats();
+}
+
+document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.lang)));
+["minconf", "show-unsnapped", "show-rejected", "show-network"].forEach(id => $(id).addEventListener("input", () => {
+  $("minconf-out").textContent = (+$("minconf").value).toFixed(2); refresh();
+}));
+$("prev-view").addEventListener("click", () => { state.view--; renderDetail(); });
+$("next-view").addEventListener("click", () => { state.view++; renderDetail(); });
+$("fb-confirm").addEventListener("click", () => sendFeedback("confirm"));
+$("fb-reject").addEventListener("click", () => sendFeedback("reject"));
+$("close-detail").addEventListener("click", () => {
+  state.selected = null; $("detail").hidden = true;
+  map.getSource("selected").setData({ type: "FeatureCollection", features: [] }); refresh();
+});
+$("sheet-toggle").addEventListener("click", () => {
+  const c = $("panel").classList.toggle("collapsed");
+  $("sheet-toggle").setAttribute("aria-expanded", String(!c));
+});
+map.on("load", () => init().catch(err => { console.error(err); $("area").textContent = "Could not load data: " + err.message; }));
+</script>
+</body>
+</html>

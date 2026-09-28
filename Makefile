@@ -3,7 +3,7 @@
 UV ?= uv
 RUN = $(UV) run
 
-.PHONY: setup check coverage fetch-osm fetch-images pilot analyze test lint
+.PHONY: setup check coverage fetch-osm fetch-images pilot analyze geolocate evaluate serve test lint
 
 setup:
 	$(UV) sync --extra dev
@@ -25,6 +25,15 @@ pilot:
 
 analyze:
 	$(RUN) accessmap analyze --all
+
+geolocate:
+	$(RUN) accessmap geolocate
+
+evaluate:
+	$(RUN) accessmap evaluate
+
+serve:
+	$(RUN) accessmap serve --host $${HOST:-127.0.0.1}
 
 test:
 	$(RUN) pytest

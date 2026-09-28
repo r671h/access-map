@@ -135,6 +135,17 @@ def cmd_evaluate(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    import uvicorn
+
+    from accessmap.config import get_settings
+    from accessmap.web.app import create_app
+
+    print(f"access-map on http://{args.host}:{args.port}  (Ctrl+C to stop)")
+    uvicorn.run(create_app(get_settings()), host=args.host, port=args.port, log_level="info")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="accessmap", description=__doc__)
     p.add_argument("-v", "--verbose", action="store_true")
@@ -177,6 +188,10 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--final", action="store_true",
                    help="also score the hold-out (only for the chosen final prompt)")
     e.set_defaults(fn=cmd_evaluate)
+    sv = sub.add_parser("serve", help="web app on http://127.0.0.1:8000")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.set_defaults(fn=cmd_serve)
     sub.add_parser("geolocate", help="place, cluster and snap detections -> barriers.geojson"
                    ).set_defaults(fn=cmd_geolocate)
     return p
