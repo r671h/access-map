@@ -56,7 +56,7 @@ def build_fixtures(settings: Settings, bbox: list[float] = DEMO_BBOX,
     import pandas as pd
     from PIL import Image
 
-    from accessmap.routing.graph import build
+    from accessmap.routing.graph import build, load_elevators
     from accessmap.web.app import SiteData
     from accessmap.web.export import slim_network
 
@@ -90,7 +90,8 @@ def build_fixtures(settings: Settings, bbox: list[float] = DEMO_BBOX,
     snapped = [f for f in barriers if f["properties"]["snapped"]
                and f["properties"].get("edge_u") in largest
                and f["properties"].get("edge_v") in largest]
-    graph = build(sub, snapped, kerbs, settings)
+    elevators = [f for f in load_elevators(osm) if _inside(*f["geometry"]["coordinates"], bbox)]
+    graph = build(sub, snapped, kerbs, settings, elevators)
     _write(out / "routing_graph.json", graph)
 
     frames = pd.read_parquet(settings.paths.processed / "frames.parquet")

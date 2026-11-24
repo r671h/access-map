@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>access-map statistics</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f5fbf%27/%3E%3C/svg%3E">
 <style>
@@ -12,6 +13,14 @@
     /* chart series (validated: colorblind-safe, >= 3:1 on the surface) */
     --s-on: #2a78d6; --s-off: #eb6834;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1d1f; --panel: #151618; --text: #ecebe7; --muted: #a3a29c; --line: #34353a;
+      --accent: #7fb0ff; --ok: #5cc98a; --danger: #ff8a80;
+      --s-on: #4c94ec; --s-off: #f07c4c;
+    }
+    .dot { box-shadow: 0 0 0 1px rgba(255,255,255,.4) !important; }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }

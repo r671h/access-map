@@ -23,8 +23,9 @@ LAYER_QUERIES = {
     "barriers": 'node["barrier"]',
     "steps": 'way["highway"="steps"]',
     "major_roads": 'way["highway"~"^(motorway|trunk)(_link)?$"]',
+    # Lifts between levels (stations, underpasses); build-graph links the levels they serve.
+    "elevators": 'node["highway"="elevator"]',
 }
-
 
 
 def _tag(el: dict, key: str):
@@ -40,6 +41,7 @@ LAYER_PREDICATES = {
     # Roads without pedestrian space; used to drop frames shot from them (phase 2).
     "major_roads": lambda el: el["type"] == "way" and str(_tag(el, "highway")).startswith(
         ("motorway", "trunk")),
+    "elevators": lambda el: el["type"] == "node" and _tag(el, "highway") == "elevator",
 }
 
 
@@ -82,12 +84,14 @@ def split_layers(elements: list[dict]) -> dict[str, dict]:
             for name, pred in LAYER_PREDICATES.items()}
 
 
-def fetch_layers(bbox) -> dict[str, dict]:
-    """All layers in one Overpass request (public servers are slow; one round trip)."""
+def fetch_layers(bbox, names: list[str] | None = None) -> dict[str, dict]:
+    """The named layers (default: all) in one Overpass request (public servers are slow;
+    one round trip)."""
+    names = list(LAYER_QUERIES) if names is None else names
     b = overpass.overpass_bbox(bbox)
-    union = "".join(f"{sel}({b});" for sel in LAYER_QUERIES.values())
+    union = "".join(f"{LAYER_QUERIES[n]}({b});" for n in names)
     data = overpass.query(f"[out:json][timeout:170];({union});out geom;")
-    layers = split_layers(data.get("elements", []))
+    layers = {n: fc for n, fc in split_layers(data.get("elements", [])).items() if n in names}
     for name, fc in layers.items():
         log.info("OSM layer %s: %d features", name, len(fc["features"]))
     return layers
@@ -234,12 +238,13 @@ def run(settings: Settings, refresh: bool = False) -> dict:
         G_full = download_walk_graph(settings)
         ox.save_graphml(G_full, graph_path)
 
-    if all(p.is_file() for p in layer_paths.values()) and not refresh:
-        layers = {n: json.loads(p.read_text(encoding="utf-8")) for n, p in layer_paths.items()}
-    else:
-        layers = fetch_layers(settings.project.area.bbox)
-        for name, fc in layers.items():
+    # Only missing layers are downloaded (e.g. one added in a later version), so the cached
+    # ones keep matching the walking graph and the barriers snapped to it.
+    missing = [n for n, p in layer_paths.items() if refresh or not p.is_file()]
+    if missing:
+        for name, fc in fetch_layers(settings.project.area.bbox, missing).items():
             layer_paths[name].write_text(json.dumps(fc), encoding="utf-8")
+    layers = {n: json.loads(p.read_text(encoding="utf-8")) for n, p in layer_paths.items()}
 
     G = largest_component(G_full)
     ox.save_graphml(G, out / "walk.graphml")

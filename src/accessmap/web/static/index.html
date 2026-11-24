@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>access-map</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27%231f5fbf%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -12,8 +13,22 @@
   :root {
     --bg: #ffffff; --panel: #fbfbfa; --text: #1d1d1b; --muted: #62625d; --line: #e3e2dd;
     --accent: #1f5fbf; --accent-text: #ffffff; --danger: #b3261e; --ok: #1a7f3c;
+    --hover: #f0efeb; --selected: #eef3fb; --chip: #eceae4; --handle: #c9c7c0;
+    --ok-bg: #dcf1e2; --danger-bg: #f9dedc;
+    --warn-bg: #fff4e0; --warn-line: #f0c987; --warn-text: #6b4200;
+    --route-base: #e08214; --route-acc: #1f5fbf; --scrim: rgba(251, 251, 250, .82);
     --panel-w: 380px; --radius: 10px;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1d1f; --panel: #151618; --text: #ecebe7; --muted: #a3a29c; --line: #34353a;
+      --accent: #7fb0ff; --accent-text: #10213d; --danger: #ff8a80; --ok: #5cc98a;
+      --hover: #26272b; --selected: #1f2a3d; --chip: #2c2d31; --handle: #55565c;
+      --ok-bg: #173523; --danger-bg: #3d1d1b;
+      --warn-bg: #33270f; --warn-line: #7a5a1c; --warn-text: #f3d49b;
+      --route-base: #f0a04b; --route-acc: #6ea8ff; --scrim: rgba(21, 22, 24, .82);
+    }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }  /* author display rules must not un-hide elements */
@@ -40,7 +55,7 @@
   .types { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
   .types label { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer;
     font-size: 14px; border-radius: 6px; }
-  .types label:hover { background: #f0efeb; }
+  .types label:hover { background: var(--hover); }
   .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #fff;
     box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
   .count { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
@@ -52,9 +67,8 @@
   #list button { width: 100%; text-align: left; display: flex; gap: 8px; align-items: center;
     border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 7px 10px;
     font: inherit; font-size: 13px; cursor: pointer; color: var(--text); }
-  #list button:hover, #list button[aria-current="true"] { background: #eef3fb; }
+  #list button:hover, #list button[aria-current="true"] { background: var(--selected); }
   #list .conf { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-  #detail[hidden] { display: none; }
   .photo { position: relative; border-radius: 8px; overflow: hidden; background: #222; line-height: 0; }
   .photo img { width: 100%; height: auto; display: block; }
   .box { position: absolute; border: 3px solid #ffd400; box-shadow: 0 0 0 1px #000, inset 0 0 0 1px #000;
@@ -63,9 +77,9 @@
     font-size: 12px; color: var(--muted); gap: 6px; }
   .detail-head { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
   .detail-head h3 { margin: 0; font-size: 17px; }
-  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eceae4; color: var(--muted); }
-  .badge.rejected { background: #f9dedc; color: var(--danger); }
-  .badge.confirmed { background: #dcf1e2; color: var(--ok); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .badge.rejected { background: var(--danger-bg); color: var(--danger); }
+  .badge.confirmed { background: var(--ok-bg); color: var(--ok); }
   .desc { font-size: 14px; line-height: 1.45; margin: 6px 0; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; margin: 8px 0; }
   dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
@@ -73,35 +87,81 @@
   .confbar i { display: block; height: 100%; background: var(--accent); }
   .btn { font: inherit; font-size: 14px; border-radius: 8px; padding: 8px 12px; cursor: pointer;
     border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-  .btn:hover { border-color: #bdbbb3; }
+  .btn:hover { border-color: var(--handle); }
+  .btn:disabled { opacity: .5; cursor: default; }
   .btn.small { padding: 3px 9px; font-size: 13px; }
   .btn.ok { border-color: var(--ok); color: var(--ok); }
   .btn.no { border-color: var(--danger); color: var(--danger); }
   .fb { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
   .fb textarea { grid-column: 1 / -1; font: inherit; font-size: 13px; border: 1px solid var(--line);
-    border-radius: 8px; padding: 6px 8px; resize: vertical; min-height: 34px; }
+    border-radius: 8px; padding: 6px 8px; resize: vertical; min-height: 34px; background: var(--bg); color: var(--text); }
   .fb-msg { font-size: 12px; color: var(--muted); grid-column: 1 / -1; min-height: 1em; }
   a { color: var(--accent); }
   button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px; }
   select { font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--bg); color: var(--text); }
+
+  /* Route: from / to fields with address search, actions, result. */
+  .fields { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 8px; align-items: center; margin-top: 8px; }
+  .fields > label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .fields .pin-key { width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-grid; place-items: center; }
+  .pin-key.start, .pin.start { background: #1a7f3c; } .pin-key.end, .pin.end { background: #b3261e; }
+  .combo { position: relative; min-width: 0; }
+  .combo input { width: 100%; font: inherit; font-size: 14px; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .suggest { position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 5; list-style: none; margin: 0;
+    padding: 4px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.14); max-height: 240px; overflow-y: auto; }
+  .suggest li { padding: 6px 10px; font-size: 13px; line-height: 1.35; cursor: pointer; }
+  .suggest li[aria-selected="true"], .suggest li:hover { background: var(--selected); }
+  .suggest li.empty { color: var(--muted); cursor: default; background: transparent; }
+  .suggest small { display: block; color: var(--muted); }
+  .icon-btn { width: 34px; height: 32px; padding: 0; display: inline-grid; place-items: center; font-size: 16px; }
+  .route-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .route-msg { font-size: 12px; margin: 6px 0 0; min-height: 0; color: var(--muted); }
+  .route-msg:empty { display: none; }
   .legend-routes { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 10px; }
   .swatch { display: inline-block; width: 22px; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
-  .swatch.base { background: #e08214; height: 7px; }
-  .swatch.acc { background: #1f5fbf; }
+  .swatch.base { background: var(--route-base); height: 7px; }
+  .swatch.acc { background: var(--route-acc); }
   .summary { font-size: 14px; line-height: 1.45; margin: 8px 0 4px; }
   .warnings { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
-  .warnings li { font-size: 13px; line-height: 1.4; background: #fff4e0; border: 1px solid #f0c987;
-    color: #6b4200; border-radius: 8px; padding: 6px 8px; }
+  .warnings li { font-size: 13px; line-height: 1.4; background: var(--warn-bg); border: 1px solid var(--warn-line);
+    color: var(--warn-text); border-radius: 8px; padding: 6px 8px; }
   table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .cmp th, .cmp td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
   .cmp th { color: var(--muted); font-weight: 600; font-size: 12px; }
   .cmp td:not(:first-child), .cmp th:not(:first-child) { text-align: right; }
   .cmp .better { color: var(--ok); font-weight: 600; }
+
+  /* Map pins (draggable route ends) and the loading / error overlay. */
+  /* MapLibre positions .marker with an inline transform, so the rotated teardrop is a child. */
+  .marker { width: 28px; height: 34px; cursor: grab; }
+  .marker:active { cursor: grabbing; }
+  .pin { width: 28px; height: 28px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); display: grid; place-items: center; }
+  .pin span { transform: rotate(45deg); color: #fff; font: 700 12px system-ui, sans-serif; }
+  #loading { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--scrim); }
+  .loading-card { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+    max-width: min(420px, calc(100vw - 32px)); padding: 14px 18px; border-radius: 12px; background: var(--bg);
+    border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.12); font-size: 14px; line-height: 1.4; }
+  .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--line);
+    border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } #panel { transition: none !important; } }
   footer { padding: 10px 16px 16px; font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: auto; }
   #sheet-toggle { display: none; }
-  .maplibregl-popup-content { font: 13px system-ui, sans-serif; padding: 6px 10px; }
+  .maplibregl-popup-content { font: 13px system-ui, sans-serif; padding: 6px 10px; background: var(--bg); color: var(--text); }
+  .maplibregl-popup-anchor-top .maplibregl-popup-tip, .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--bg); }
+  .maplibregl-popup-anchor-bottom .maplibregl-popup-tip, .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+  .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--bg); }
+  .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--bg); }
+  .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--bg); }
+  .popup-title { font-weight: 600; }
+  .popup-muted { color: var(--muted); }
 
   /* Phones: map on top, panel as a bottom sheet. */
   @media (max-width: 700px) {
@@ -114,7 +174,7 @@
     #sheet-toggle { display: block; width: 100%; border: 0; background: transparent; padding: 6px 0 0;
       cursor: pointer; }
     #sheet-toggle span { display: block; width: 40px; height: 4px; border-radius: 2px;
-      background: #c9c7c0; margin: 0 auto; }
+      background: var(--handle); margin: 0 auto; }
     #list { max-height: 160px; }
   }
 </style>
@@ -166,8 +226,28 @@
     <div class="row">
       <label for="profile" data-i18n="profile"></label>
       <select id="profile"></select>
-      <button class="btn small" id="route-clear" data-i18n="clearRoute" hidden></button>
     </div>
+    <div class="fields">
+      <label for="start-input"><span class="pin-key start" aria-hidden="true">A</span><span data-i18n="from"></span></label>
+      <div class="combo">
+        <input id="start-input" type="text" role="combobox" autocomplete="off" spellcheck="false"
+          aria-autocomplete="list" aria-expanded="false" aria-controls="start-list">
+        <ul class="suggest" id="start-list" role="listbox" hidden></ul>
+      </div>
+      <button class="btn icon-btn" id="locate" type="button">⌖</button>
+      <label for="end-input"><span class="pin-key end" aria-hidden="true">B</span><span data-i18n="to"></span></label>
+      <div class="combo">
+        <input id="end-input" type="text" role="combobox" autocomplete="off" spellcheck="false"
+          aria-autocomplete="list" aria-expanded="false" aria-controls="end-list">
+        <ul class="suggest" id="end-list" role="listbox" hidden></ul>
+      </div>
+      <button class="btn icon-btn" id="swap" type="button">⇅</button>
+    </div>
+    <div class="route-actions">
+      <button class="btn small" id="copy-link" type="button" data-i18n="copyLink" hidden></button>
+      <button class="btn small" id="route-clear" type="button" data-i18n="clearRoute" hidden></button>
+    </div>
+    <p class="route-msg" id="route-msg" role="status" aria-live="polite"></p>
     <p class="hint" id="route-hint"></p>
     <div id="route-result" hidden>
       <div class="legend-routes">
@@ -205,6 +285,7 @@
     <div class="row"><label><input type="checkbox" id="show-unsnapped" checked> <span data-i18n="showUnsnapped"></span></label></div>
     <div class="row"><label><input type="checkbox" id="show-rejected"> <span data-i18n="showRejected"></span></label></div>
     <div class="row"><label><input type="checkbox" id="show-network" checked> <span data-i18n="showNetwork"></span></label></div>
+    <div class="row" id="elevators-row" hidden><label><input type="checkbox" id="show-elevators" checked> <span data-i18n="showElevators"></span></label></div>
     <p class="hint" data-i18n="legendHint"></p>
   </section>
 
@@ -217,10 +298,18 @@
     <span data-i18n="attribution"></span>
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> contributors ·
     <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> ·
-    <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> (CC BY-SA 4.0)
+    <a href="https://www.mapillary.com" target="_blank" rel="noopener">Mapillary</a> (CC BY-SA 4.0) ·
+    <span data-i18n="searchBy"></span> <a href="https://photon.komoot.io" target="_blank" rel="noopener">Photon</a>
   </footer>
 </aside>
 <main id="map" aria-label="Map"></main>
+<div id="loading" role="status" aria-live="polite">
+  <div class="loading-card">
+    <span class="spinner" id="loading-spinner" aria-hidden="true"></span>
+    <span id="loading-text">Loading…</span>
+    <button class="btn small" id="retry" type="button" hidden>Retry</button>
+  </div>
+</div>
 
 <script>
 const COLORS = {
@@ -231,16 +320,25 @@ const I18N = {
   en: {
     overview: "Overview", statsLink: "All statistics and accuracy per type →", barriers: "barriers", photos: "photos", precision: "precision",
     types: "Barrier types", minConf: "Min. confidence", showUnsnapped: "Show barriers off the walking network",
-    showRejected: "Show barriers rejected by users", showNetwork: "Show walking network",
+    showRejected: "Show barriers rejected by users", showNetwork: "Show walking network", showElevators: "Show elevators",
     legendHint: "Faded dots are not attached to the walking network and are ignored by routing. Bigger dot = higher confidence.",
-    route: "Route", profile: "Profile", clearRoute: "Clear",
-    routeHintStart: "Click the map to set the start.", routeHintEnd: "Now click the destination.",
-    routeHintDone: "Click the map for a new start, or change the profile.",
-    routeNone: "Routing data is not available.", routing: "Calculating…",
-    shortest: "Shortest", accessible: "Accessible", length: "Length", problemsRow: "Barriers on the way",
+    route: "Route", profile: "Profile", clearRoute: "Clear", from: "From", to: "To",
+    searchPh: "Search an address or click the map", searchNone: "No places found in this area.",
+    searchFailed: "Address search is not available right now.", searchBy: "Search:",
+    pointOnMap: "Point on the map", myLocation: "My location", locate: "Use my location as the start",
+    swap: "Swap start and destination", copyLink: "🔗 Copy link to this route", linkCopied: "Link copied.",
+    linkManual: "Copy this link: ", locating: "Finding your location…",
+    geoDenied: "Location access was denied. Search an address or click the map instead.",
+    geoUnavailable: "Your location is not available.", geoOutside: "Your location is outside the mapped area.",
+    routeHintStart: "Search an address, use your location or click the map to set the start.",
+    routeHintEnd: "Now set the destination: search or click the map.",
+    routeHintDone: "Drag A or B to adjust, click the map for a new start, or change the profile.",
+    routeNone: "Routing data is not available.", routingLoading: "Loading routing data…",
+    shortest: "Shortest", accessible: "Accessible", length: "Length", problemsRow: "Barriers on the way", elevatorsRow: "Elevators",
     routeSame: (p) => `The shortest route already suits a ${p}.`,
     routeLonger: (m, pct, avoided) => `The accessible route is ${m} m longer (+${pct}%)${avoided ? ", but avoids " + avoided : ""}.`,
     routeShorter: (avoided) => `Same length or shorter${avoided ? ", and avoids " + avoided : ""}.`,
+    usesElevators: n => ` It uses ${n === 1 ? "an elevator" : n + " elevators"}.`,
     warn: { no_barrier_free_path: "No barrier-free way was found between these points — the route shown passes the fewest blocking barriers.",
       detour_exceeds_limit: w => `This detour (+${Math.round(w.detour * 100)}%) is longer than the +${Math.round(w.limit * 100)}% limit; consider another way or assistance.` },
     routeError: "No route: ",
@@ -264,20 +362,33 @@ const I18N = {
       narrow_passage: "Narrow passage", steep_slope: "Steep slope", rough_surface: "Rough surface",
       no_sidewalk: "No sidewalk" },
     height: h => `height ≈ ${h} cm`, width: w => `clear width ≈ ${w} m`,
+    elevator: "Elevator", levels: l => `Levels ${l}`,
+    elevatorAccess: { yes: "wheelchair accessible", limited: "limited wheelchair access", no: "not wheelchair accessible" },
+    elevatorUnlinked: "not linked to the walking network",
+    loading: "Loading map data…", loadFailed: "Could not load the map data: ", retry: "Retry",
   },
   de: {
     overview: "Überblick", statsLink: "Alle Statistiken und Genauigkeit je Art →", barriers: "Barrieren", photos: "Fotos", precision: "Präzision",
     types: "Barrierearten", minConf: "Mind. Konfidenz", showUnsnapped: "Barrieren abseits des Fußwegenetzes zeigen",
-    showRejected: "Von Nutzern abgelehnte Barrieren zeigen", showNetwork: "Fußwegenetz zeigen",
+    showRejected: "Von Nutzern abgelehnte Barrieren zeigen", showNetwork: "Fußwegenetz zeigen", showElevators: "Aufzüge zeigen",
     legendHint: "Blasse Punkte sind nicht mit dem Fußwegenetz verbunden und werden beim Routing ignoriert. Größerer Punkt = höhere Konfidenz.",
-    route: "Route", profile: "Profil", clearRoute: "Löschen",
-    routeHintStart: "Klicken Sie auf die Karte, um den Start zu setzen.", routeHintEnd: "Jetzt das Ziel anklicken.",
-    routeHintDone: "Für einen neuen Start auf die Karte klicken oder das Profil wechseln.",
-    routeNone: "Routing-Daten sind nicht verfügbar.", routing: "Berechne…",
-    shortest: "Kürzeste", accessible: "Barrierearm", length: "Länge", problemsRow: "Barrieren unterwegs",
+    route: "Route", profile: "Profil", clearRoute: "Löschen", from: "Von", to: "Nach",
+    searchPh: "Adresse suchen oder auf die Karte klicken", searchNone: "Keine Orte in diesem Gebiet gefunden.",
+    searchFailed: "Die Adresssuche ist gerade nicht verfügbar.", searchBy: "Suche:",
+    pointOnMap: "Punkt auf der Karte", myLocation: "Mein Standort", locate: "Meinen Standort als Start verwenden",
+    swap: "Start und Ziel tauschen", copyLink: "🔗 Link zu dieser Route kopieren", linkCopied: "Link kopiert.",
+    linkManual: "Diesen Link kopieren: ", locating: "Standort wird ermittelt…",
+    geoDenied: "Standortzugriff verweigert. Suchen Sie stattdessen eine Adresse oder klicken Sie auf die Karte.",
+    geoUnavailable: "Ihr Standort ist nicht verfügbar.", geoOutside: "Ihr Standort liegt außerhalb des kartierten Gebiets.",
+    routeHintStart: "Adresse suchen, den eigenen Standort nutzen oder auf die Karte klicken, um den Start zu setzen.",
+    routeHintEnd: "Jetzt das Ziel setzen: suchen oder auf die Karte klicken.",
+    routeHintDone: "A oder B verschieben, für einen neuen Start auf die Karte klicken oder das Profil wechseln.",
+    routeNone: "Routing-Daten sind nicht verfügbar.", routingLoading: "Routing-Daten werden geladen…",
+    shortest: "Kürzeste", accessible: "Barrierearm", length: "Länge", problemsRow: "Barrieren unterwegs", elevatorsRow: "Aufzüge",
     routeSame: (p) => `Die kürzeste Route ist bereits für ${p} geeignet.`,
     routeLonger: (m, pct, avoided) => `Die barrierearme Route ist ${m} m länger (+${pct} %)${avoided ? ", vermeidet aber " + avoided : ""}.`,
     routeShorter: (avoided) => `Gleich lang oder kürzer${avoided ? " und vermeidet " + avoided : ""}.`,
+    usesElevators: n => ` Sie nutzt ${n === 1 ? "einen Aufzug" : n + " Aufzüge"}.`,
     warn: { no_barrier_free_path: "Zwischen diesen Punkten gibt es keinen barrierefreien Weg — die gezeigte Route hat die wenigsten sperrenden Barrieren.",
       detour_exceeds_limit: w => `Dieser Umweg (+${Math.round(w.detour * 100)} %) überschreitet die Grenze von +${Math.round(w.limit * 100)} %; ggf. anderen Weg oder Hilfe wählen.` },
     routeError: "Keine Route: ",
@@ -301,6 +412,10 @@ const I18N = {
       stairs: "Treppe", narrow_passage: "Engstelle", steep_slope: "Starke Steigung",
       rough_surface: "Unebener Belag", no_sidewalk: "Kein Gehweg" },
     height: h => `Höhe ≈ ${h} cm`, width: w => `Durchgang ≈ ${w} m`,
+    elevator: "Aufzug", levels: l => `Ebenen ${l}`,
+    elevatorAccess: { yes: "rollstuhlgerecht", limited: "eingeschränkt rollstuhlgerecht", no: "nicht rollstuhlgerecht" },
+    elevatorUnlinked: "nicht mit dem Fußwegenetz verbunden",
+    loading: "Kartendaten werden geladen…", loadFailed: "Kartendaten konnten nicht geladen werden: ", retry: "Erneut versuchen",
   },
 };
 
@@ -315,24 +430,54 @@ const API = STATIC_SITE ? {
   stats: "/api/stats", graph: "/api/graph", photo: id => `/api/frames/${encodeURIComponent(id)}/image`,
 };
 const FEEDBACK_URL = "/api/feedback";
+// Address search: Photon (komoot), OSM-based, free for moderate use; limited to the area's bbox.
+const PHOTON_URL = "https://photon.komoot.io/api/";
+const DARK = !!window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+const PAL = DARK
+  ? { network: "#7aa7e0", base: "#f0a04b", acc: "#6ea8ff", selected: "#6ea8ff", elevator: "#3a7bd5" }
+  : { network: "#3b6fb6", base: "#e08214", acc: "#1f5fbf", selected: "#1f5fbf", elevator: "#1f5fbf" };
 
 const state = { lang: "en", cfg: null, all: [], enabled: new Set(), selected: null, view: 0, stats: null,
-  feedbackOnline: true, router: null, route: { start: null, end: null, result: null, error: null } };
+  feedbackOnline: true, router: null, routerLoading: true, elevators: [], hashReady: false,
+  route: { start: null, end: null, labels: { start: "", end: "" }, result: null, error: null, profile: null } };
 const $ = id => document.getElementById(id);
 const t = () => I18N[state.lang];
 
 function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
+function guessLang() {
+  const saved = storageGet("accessmap.lang");
+  if (I18N[saved]) return saved;
+  return (navigator.language || "").toLowerCase().startsWith("de") ? "de" : "en";
+}
+
+// ---- loading / error overlay -----------------------------------------------------------
+function showLoading(text) { $("loading").hidden = false; $("loading-text").textContent = text; }
+function showLoadError(err) {
+  const L = I18N[state.lang] || I18N[guessLang()];
+  $("loading").hidden = false; $("loading-spinner").hidden = true;
+  $("loading-text").textContent = L.loadFailed + (err && err.message ? err.message : err);
+  $("retry").textContent = L.retry; $("retry").hidden = false;
+}
+showLoading(I18N[guessLang()].loading);
+$("retry").addEventListener("click", () => location.reload());
 
 const map = new maplibregl.Map({
   container: "map",
   // OpenFreeMap: free vector tiles from OSM data, allowed for public apps; attribution comes with the style.
-  style: "https://tiles.openfreemap.org/styles/positron",
+  style: `https://tiles.openfreemap.org/styles/${DARK ? "dark" : "positron"}`,
   center: [8.5335, 52.024], zoom: 15, attributionControl: { compact: true },
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+// A style that fails before the first load would otherwise leave the spinner forever.
+map.on("error", e => { if (!map.loaded() && !state.cfg) showLoadError(e.error || "map style"); });
 
 async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); }
+// Start downloading the data now, in parallel with the base map: the map's "load" event waits
+// for its first tiles, which can take seconds on a cold cache.
+const early = (p => { p.catch(() => {}); return p; });
+const DATA = { config: early(getJSON(API.config)), barriers: early(getJSON(API.barriers)),
+  network: early(getJSON(API.network)) };
 
 function colorExpr() {
   const e = ["match", ["get", "type"]];
@@ -357,6 +502,7 @@ function refresh() {
     properties: { id: f.properties.id, type: f.properties.type, confidence: f.properties.confidence,
       snapped: f.properties.snapped, fb_status: (f.properties.feedback || {}).status || "" } })) });
   if (map.getLayer("network")) map.setLayoutProperty("network", "visibility", $("show-network").checked ? "visible" : "none");
+  if (map.getLayer("elevators")) map.setLayoutProperty("elevators", "visibility", $("show-elevators").checked ? "visible" : "none");
   renderList(feats);
   renderTypes();
 }
@@ -398,7 +544,12 @@ function select(f, fly) {
   $("detail").hidden = false; $("panel").classList.remove("collapsed");
   $("panel").scrollTo({ top: 0, behavior: "smooth" });
   $("fb-msg").textContent = ""; $("fb-comment").value = "";
-  renderDetail(); renderList(state.all.filter(visible));
+  renderDetail(); renderList(state.all.filter(visible)); writeHash();
+}
+
+function closeDetail() {
+  state.selected = null; $("detail").hidden = true;
+  map.getSource("selected")?.setData({ type: "FeatureCollection", features: [] }); refresh(); writeHash();
 }
 
 function renderDetail() {
@@ -456,11 +607,22 @@ function applyLang(lang) {
   document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === lang));
   document.querySelectorAll("[data-i18n]").forEach(el => { const v = t()[el.dataset.i18n]; if (typeof v === "string") el.textContent = v; });
   $("fb-comment").placeholder = t().commentPh;
+  for (const k of ["start", "end"]) $(k + "-input").placeholder = t().searchPh;
+  for (const [id, key] of [["locate", "locate"], ["swap", "swap"]]) {
+    $(id).setAttribute("aria-label", t()[key]); $(id).title = t()[key];
+  }
+  // Labels that are not place names follow the language.
+  for (const k of ["start", "end"]) {
+    const l = state.route.labels[k];
+    if (l === I18N.en.pointOnMap || l === I18N.de.pointOnMap) state.route.labels[k] = t().pointOnMap;
+    if (l === I18N.en.myLocation || l === I18N.de.myLocation) state.route.labels[k] = t().myLocation;
+  }
   const sel = $("profile"); sel.innerHTML = "";
   for (const p of state.cfg.profiles) { const o = document.createElement("option"); o.value = p; o.textContent = t().profiles[p] || p; sel.appendChild(o); }
   const savedProfile = state.route.profile || storageGet("accessmap.profile");
   if (state.cfg.profiles.includes(savedProfile)) sel.value = savedProfile;
-  renderStats(); refresh(); renderDetail(); renderRoute();
+  state.route.profile = sel.value;
+  renderStats(); refresh(); renderDetail(); renderRoute(); syncInputs();
 }
 
 // ---- routing (static/router.js, same algorithm as accessmap.routing.router) ----------
@@ -478,7 +640,31 @@ function describeCounts(counts) {
   return parts.slice(0, -1).join(", ") + ` ${L.and} ` + parts[parts.length - 1];
 }
 
-function computeRoute() {
+// Draggable A / B pins.
+const markers = {};
+for (const kind of ["start", "end"]) {
+  const el = document.createElement("div");
+  el.className = "marker";
+  el.innerHTML = `<div class="pin ${kind}"><span>${kind === "start" ? "A" : "B"}</span></div>`;
+  // The rotated teardrop's tip sits at the bottom centre of the 28×34 box.
+  const m = new maplibregl.Marker({ element: el, draggable: true, anchor: "bottom" });
+  m.on("dragend", () => { const p = m.getLngLat(); setPoint(kind, [p.lng, p.lat], t().pointOnMap); });
+  markers[kind] = m;
+}
+
+function setRouteMsg(text) { $("route-msg").textContent = text || ""; }
+
+// Sets one end of the route; `fit` moves the map to show it (search, location, shared link).
+function setPoint(kind, lonlat, label, { fit = false, compute = true } = {}) {
+  const r = state.route;
+  r[kind] = lonlat; r.labels[kind] = lonlat ? label : "";
+  setRouteMsg("");
+  syncInputs();
+  if (compute) computeRoute({ fit });
+  if (fit && lonlat && !(r.start && r.end && r.result)) map.easeTo({ center: lonlat, zoom: Math.max(map.getZoom(), 16) });
+}
+
+function computeRoute({ fit = false } = {}) {
   const r = state.route;
   r.profile = $("profile").value;
   r.result = null; r.error = null;
@@ -487,7 +673,12 @@ function computeRoute() {
       r.result = state.router.route(r.start, r.end, r.profile, rejectedIds());
     } catch (err) { r.error = err.message; }
   }
-  drawRoute(); renderRoute();
+  drawRoute(); renderRoute(); writeHash();
+  if (fit && r.result) {
+    const b = new maplibregl.LngLatBounds();
+    for (const c of [...r.result.baseline.coords, ...r.result.accessible.coords]) b.extend(c);
+    map.fitBounds(b, { padding: 60, maxZoom: 18 });
+  }
 }
 
 function drawRoute() {
@@ -495,16 +686,25 @@ function drawRoute() {
   const line = (coords, kind) => ({ type: "Feature", properties: { kind }, geometry: { type: "LineString", coordinates: coords } });
   map.getSource("routes")?.setData(res ? { type: "FeatureCollection", features: [
     line(res.baseline.coords, "baseline"), line(res.accessible.coords, "accessible")] } : EMPTY);
-  const pts = [];
-  if (r.start) pts.push({ type: "Feature", properties: { kind: "A" }, geometry: { type: "Point", coordinates: r.start } });
-  if (r.end) pts.push({ type: "Feature", properties: { kind: "B" }, geometry: { type: "Point", coordinates: r.end } });
-  map.getSource("route-points")?.setData({ type: "FeatureCollection", features: pts });
+  for (const kind of ["start", "end"]) {
+    if (r[kind]) markers[kind].setLngLat(r[kind]).addTo(map); else markers[kind].remove();
+  }
+}
+
+function syncInputs() {
+  for (const kind of ["start", "end"]) {
+    const input = $(kind + "-input");
+    if (document.activeElement !== input) input.value = state.route.labels[kind] || "";
+  }
 }
 
 function renderRoute() {
   const L = t(), r = state.route, res = r.result;
-  $("route-clear").hidden = !r.start;
-  $("route-hint").textContent = !state.router ? L.routeNone : r.error ? L.routeError + r.error
+  $("route-clear").hidden = !r.start && !r.end;
+  $("copy-link").hidden = !(r.start && r.end);
+  $("swap").disabled = !r.start && !r.end;
+  $("route-hint").textContent = !state.router ? (state.routerLoading ? L.routingLoading : L.routeNone)
+    : r.error ? L.routeError + r.error
     : !r.start ? L.routeHintStart : !r.end ? L.routeHintEnd : L.routeHintDone;
   $("route-result").hidden = !res;
   if (!res) return;
@@ -512,9 +712,10 @@ function renderRoute() {
   $("r-base-len").textContent = `${Math.round(b.length_m)} m`;
   $("r-acc-len").textContent = `${Math.round(a.length_m)} m`;
   const avoided = describeCounts(res.avoided);
-  $("r-summary").textContent = res.same_route && !b.problem_count ? L.routeSame(L.profilesIn[res.profile] || res.profile)
+  const lifts = (a.elevators || []).length;
+  $("r-summary").textContent = (res.same_route && !b.problem_count ? L.routeSame(L.profilesIn[res.profile] || res.profile)
     : res.extra_m > 0.5 ? L.routeLonger(Math.round(res.extra_m), Math.round(res.detour * 100), avoided)
-    : L.routeShorter(avoided);
+    : L.routeShorter(avoided)) + (lifts ? L.usesElevators(lifts) : "");
   const ul = $("r-warnings"); ul.innerHTML = "";
   for (const w of res.warnings) {
     const li = document.createElement("li"), msg = L.warn[w.code];
@@ -528,6 +729,7 @@ function renderRoute() {
     const nb = b.problems[ty] || 0, na = a.problems[ty] || 0;
     rows.push([`· ${(L.plural[ty] || [ty, ty])[1]}`, nb, na, na < nb]);
   }
+  if ((b.elevators || []).length || lifts) rows.push([L.elevatorsRow, (b.elevators || []).length, lifts, false]);
   $("r-table").innerHTML = "";
   for (const [label, vb, va, better] of rows) {
     const tr = document.createElement("tr");
@@ -542,10 +744,186 @@ function renderRoute() {
 
 function onMapClick(e) {
   if (!state.router) return;
-  if (map.queryRenderedFeatures(e.point, { layers: ["barriers"] }).length) return;  // opens the barrier instead
+  if (e.originalEvent?.target?.closest?.(".marker")) return;  // a click on (or a drag of) a pin
+  const layers = ["barriers", "elevators"].filter(id => map.getLayer(id));
+  if (map.queryRenderedFeatures(e.point, { layers }).length) return;  // opens the barrier / elevator instead
   const r = state.route, p = [e.lngLat.lng, e.lngLat.lat];
-  if (!r.start || r.end) { r.start = p; r.end = null; r.result = null; r.error = null; drawRoute(); renderRoute(); }
-  else { r.end = p; computeRoute(); }
+  if (!r.start || r.end) {
+    r.end = null; r.labels.end = "";
+    setPoint("start", p, t().pointOnMap);
+  } else setPoint("end", p, t().pointOnMap);
+}
+
+// ---- address search (combobox: type, arrows, Enter, Escape) ---------------------------
+function placeLabel(p) {
+  const street = [p.street, p.housenumber].filter(Boolean).join(" ");
+  const parts = [p.name, street !== p.name ? street : null, p.city].filter(Boolean);
+  return { title: parts[0] || "?", sub: parts.slice(1).join(", ") };
+}
+
+function setupSearch(kind) {
+  const input = $(kind + "-input"), list = $(kind + "-list");
+  let timer = null, ctrl = null, items = [], active = -1;
+  const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); active = -1; };
+  const render = message => {
+    list.innerHTML = "";
+    if (message || !items.length) {
+      const li = document.createElement("li"); li.className = "empty"; li.textContent = message || t().searchNone;
+      list.appendChild(li);
+    }
+    items.forEach((it, i) => {
+      const li = document.createElement("li");
+      li.id = `${kind}-opt-${i}`; li.setAttribute("role", "option"); li.setAttribute("aria-selected", String(i === active));
+      li.textContent = it.title;
+      if (it.sub) { const s = document.createElement("small"); s.textContent = it.sub; li.appendChild(s); }
+      li.addEventListener("mousedown", e => { e.preventDefault(); choose(i); });
+      list.appendChild(li);
+    });
+    list.hidden = false; input.setAttribute("aria-expanded", "true");
+    if (active >= 0) input.setAttribute("aria-activedescendant", `${kind}-opt-${active}`);
+    else input.removeAttribute("aria-activedescendant");
+  };
+  const choose = i => {
+    const it = items[i]; if (!it) return;
+    close(); input.blur();
+    setPoint(kind, it.lonlat, it.sub ? `${it.title}, ${it.sub}` : it.title, { fit: true });
+  };
+  const search = async q => {
+    ctrl?.abort(); ctrl = new AbortController();
+    const [x0, y0, x1, y1] = state.cfg.area.bbox;
+    const url = `${PHOTON_URL}?q=${encodeURIComponent(q)}&limit=6&lang=${state.lang}&bbox=${x0},${y0},${x1},${y1}`;
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(r.status);
+      const js = await r.json();
+      // Photon often returns the same place several times (square, street, stop): keep one per label.
+      const seen = new Set();
+      items = js.features.map(f => ({ lonlat: f.geometry.coordinates, ...placeLabel(f.properties) }))
+        .filter(it => { const k = it.title + "|" + it.sub; return !seen.has(k) && seen.add(k); });
+      active = items.length ? 0 : -1; render();
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      items = []; active = -1; render(t().searchFailed);
+    }
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 3) { ctrl?.abort(); items = []; close(); return; }
+    timer = setTimeout(() => search(q), 300);
+  });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (list.hidden || !items.length) return;
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      render(); document.getElementById(`${kind}-opt-${active}`)?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      if (!list.hidden && items.length) { e.preventDefault(); choose(Math.max(active, 0)); }
+    } else if (e.key === "Escape") {
+      if (!list.hidden) { e.preventDefault(); e.stopPropagation(); close(); }
+      input.value = state.route.labels[kind] || "";
+    }
+  });
+  input.addEventListener("focus", () => input.select());
+  input.addEventListener("blur", () => { clearTimeout(timer); close(); input.value = state.route.labels[kind] || ""; });
+}
+
+// ---- my location, swap, share --------------------------------------------------------
+function insideArea([lon, lat], margin = 0.002) {
+  const [x0, y0, x1, y1] = state.cfg.area.bbox;
+  return lon >= x0 - margin && lon <= x1 + margin && lat >= y0 - margin && lat <= y1 + margin;
+}
+
+$("locate").addEventListener("click", () => {
+  if (!navigator.geolocation) { setRouteMsg(t().geoUnavailable); return; }
+  setRouteMsg(t().locating);
+  navigator.geolocation.getCurrentPosition(pos => {
+    const p = [pos.coords.longitude, pos.coords.latitude];
+    if (!insideArea(p)) { setRouteMsg(t().geoOutside); return; }
+    setPoint("start", p, t().myLocation, { fit: true });
+  }, err => setRouteMsg(err.code === 1 ? t().geoDenied : t().geoUnavailable),
+  { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+});
+
+$("swap").addEventListener("click", () => {
+  const r = state.route;
+  [r.start, r.end] = [r.end, r.start];
+  [r.labels.start, r.labels.end] = [r.labels.end, r.labels.start];
+  syncInputs(); computeRoute();
+});
+
+$("copy-link").addEventListener("click", async () => {
+  writeHash();
+  try { await navigator.clipboard.writeText(location.href); setRouteMsg(t().linkCopied); }
+  catch { setRouteMsg(t().linkManual + location.href); }
+});
+
+// ---- shareable state in the URL: #from=lat,lon&to=lat,lon&profile=…&barrier=… -------------
+function writeHash() {
+  if (!state.hashReady) return;  // until a shared link has been restored, keep it as it is
+  const r = state.route, parts = [];
+  const ll = p => `${p[1].toFixed(5)},${p[0].toFixed(5)}`;
+  if (r.start) parts.push("from=" + ll(r.start));
+  if (r.end) parts.push("to=" + ll(r.end));
+  if (r.start || r.end) parts.push("profile=" + encodeURIComponent($("profile").value));
+  if (state.selected) parts.push("barrier=" + encodeURIComponent(state.selected.properties.id));
+  const hash = parts.length ? "#" + parts.join("&") : "";
+  if (hash !== location.hash) history.replaceState(null, "", location.pathname + location.search + hash);
+}
+
+function readHash() {
+  const out = {};
+  for (const part of location.hash.replace(/^#/, "").split("&")) {
+    const i = part.indexOf("="); if (i < 1) continue;
+    let v;
+    try { v = decodeURIComponent(part.slice(i + 1)); } catch { continue; }
+    const k = part.slice(0, i);
+    if (k === "from" || k === "to") {
+      const [lat, lon] = v.split(",").map(Number);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) out[k] = [lon, lat];
+    } else out[k] = v;
+  }
+  return out;
+}
+
+// ---- elevators (from the routing graph) ---------------------------------------------------
+function elevatorIcon() {
+  const s = 44, c = document.createElement("canvas"); c.width = c.height = s;
+  const g = c.getContext("2d");
+  g.fillStyle = PAL.elevator; g.strokeStyle = "#fff"; g.lineWidth = 4;
+  g.beginPath();
+  if (g.roundRect) g.roundRect(3, 3, s - 6, s - 6, 9); else g.rect(3, 3, s - 6, s - 6);
+  g.fill(); g.stroke();
+  g.fillStyle = "#fff";
+  g.beginPath(); g.moveTo(22, 9); g.lineTo(31, 19); g.lineTo(13, 19); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(22, 35); g.lineTo(31, 25); g.lineTo(13, 25); g.closePath(); g.fill();
+  return g.getImageData(0, 0, s, s);
+}
+
+function addElevators(list) {
+  state.elevators = list;
+  $("elevators-row").hidden = !list.length;
+  if (!list.length || map.getSource("elevators")) return;
+  map.addImage("elevator", elevatorIcon(), { pixelRatio: 2 });
+  map.addSource("elevators", { type: "geojson", data: { type: "FeatureCollection", features: list.map(e => ({
+    type: "Feature", geometry: { type: "Point", coordinates: e.lonlat },
+    properties: { id: e.id, name: e.name || "", level: e.level || "", wheelchair: e.wheelchair || "", linked: !!e.linked } })) } });
+  map.addLayer({ id: "elevators", type: "symbol", source: "elevators", minzoom: 14,
+    layout: { "icon-image": "elevator", "icon-allow-overlap": true,
+      "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.55, 18, 1] } }, "barriers");
+  map.on("mouseenter", "elevators", () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "elevators", () => { map.getCanvas().style.cursor = ""; });
+  map.on("click", "elevators", e => {
+    const p = e.features[0].properties, L = t(), box = document.createElement("div");
+    const line = (text, cls) => { const d = document.createElement("div"); d.textContent = text; if (cls) d.className = cls; box.appendChild(d); };
+    line(p.name || L.elevator, "popup-title");
+    if (p.level) line(L.levels(String(p.level).split(";").join(", ")));
+    if (L.elevatorAccess[p.wheelchair]) line(L.elevatorAccess[p.wheelchair]);
+    if (String(p.linked) !== "true") line(L.elevatorUnlinked, "popup-muted");
+    new maplibregl.Popup({ offset: 12 }).setLngLat(e.features[0].geometry.coordinates).setDOMContent(box).addTo(map);
+  });
+  refresh();
 }
 
 function renderStats() {
@@ -554,7 +932,9 @@ function renderStats() {
   $("s-precision").textContent = s.precision != null ? Math.round(s.precision * 100) + "%" : "–";
   $("s-note").textContent = t().note(s.model, s.prompt, s.gemini_calls.used, s.gemini_calls.budget);
 }
-async function loadStats() { state.stats = await getJSON(API.stats); renderStats(); }
+async function loadStats() {
+  try { state.stats = await getJSON(API.stats); renderStats(); } catch (err) { console.warn("stats unavailable", err); }
+}
 
 // Latest confirm/reject counts; the static barrier file carries none.
 async function loadFeedback() {
@@ -565,31 +945,32 @@ async function loadFeedback() {
 }
 
 async function init() {
-  state.cfg = await getJSON(API.config);
+  state.cfg = await DATA.config;
+  state.lang = guessLang();
   state.enabled = new Set(state.cfg.types);
   $("area").textContent = state.cfg.area.name;
   $("stats-link-row").hidden = !state.cfg.features.includes("stats_page");
+  const shared = readHash();
   const [x0, y0, x1, y1] = state.cfg.area.bbox;
-  map.fitBounds([[x0, y0], [x1, y1]], { padding: 20, duration: 0 });
-  const [barriers, network] = await Promise.all([getJSON(API.barriers), getJSON(API.network)]);
+  if (!shared.from && !shared.to && !shared.barrier) map.fitBounds([[x0, y0], [x1, y1]], { padding: 20, duration: 0 });
+  const [barriers, network] = await Promise.all([DATA.barriers, DATA.network]);
   state.all = barriers.features;
   await loadFeedback();
 
   map.addSource("network", { type: "geojson", data: network });
   map.addLayer({ id: "network", type: "line", source: "network",
-    paint: { "line-color": "#3b6fb6", "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 2.5], "line-opacity": 0.45 } });
+    paint: { "line-color": PAL.network, "line-width": ["interpolate", ["linear"], ["zoom"], 14, 0.6, 18, 2.5], "line-opacity": 0.45 } });
   map.addSource("routes", { type: "geojson", data: EMPTY });
   map.addLayer({ id: "route-baseline", type: "line", source: "routes", filter: ["==", ["get", "kind"], "baseline"],
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#e08214", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 5, 18, 12], "line-opacity": 0.75 } });
+    paint: { "line-color": PAL.base, "line-width": ["interpolate", ["linear"], ["zoom"], 13, 5, 18, 12], "line-opacity": 0.75 } });
   map.addLayer({ id: "route-accessible", type: "line", source: "routes", filter: ["==", ["get", "kind"], "accessible"],
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#1f5fbf", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 3, 18, 6] } });
-  map.addSource("route-points", { type: "geojson", data: EMPTY });
-  map.addSource("barriers", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addSource("selected", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    paint: { "line-color": PAL.acc, "line-width": ["interpolate", ["linear"], ["zoom"], 13, 3, 18, 6] } });
+  map.addSource("barriers", { type: "geojson", data: EMPTY });
+  map.addSource("selected", { type: "geojson", data: EMPTY });
   map.addLayer({ id: "selected", type: "circle", source: "selected",
-    paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#1f5fbf", "circle-stroke-width": 3 } });
+    paint: { "circle-radius": 16, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": PAL.selected, "circle-stroke-width": 3 } });
   map.addLayer({ id: "barriers", type: "circle", source: "barriers", paint: {
     "circle-color": ["case", ["==", ["get", "fb_status"], "rejected"], "#9a9a94", colorExpr()],
     "circle-radius": ["interpolate", ["linear"], ["zoom"], 14, ["+", 2, ["*", 4, ["get", "confidence"]]], 18, ["+", 5, ["*", 8, ["get", "confidence"]]]],
@@ -607,42 +988,59 @@ async function init() {
     const id = e.features[0].properties.id;
     select(state.all.find(f => f.properties.id === id), false);
   });
-
-  map.addLayer({ id: "route-points", type: "circle", source: "route-points", paint: {
-    "circle-radius": 9, "circle-color": ["match", ["get", "kind"], "A", "#1a7f3c", "#b3261e"],
-    "circle-stroke-color": "#fff", "circle-stroke-width": 3 } });
-  map.addLayer({ id: "route-labels", type: "symbol", source: "route-points",
-    layout: { "text-field": ["get", "kind"], "text-size": 11, "text-font": ["Noto Sans Bold"], "text-allow-overlap": true },
-    paint: { "text-color": "#fff" } });
   map.on("click", onMapClick);
-  try { state.router = new AccessRouter(await getJSON(API.graph)); } catch (err) { console.warn("routing unavailable", err); }
 
-  const saved = storageGet("accessmap.lang");
-  applyLang(state.cfg.languages.includes(saved) ? saved : state.cfg.language);
+  if (shared.profile && state.cfg.profiles.includes(shared.profile)) state.route.profile = shared.profile;
+  applyLang(state.cfg.languages.includes(state.lang) ? state.lang : state.cfg.language);
+  $("loading").hidden = true;
+  const sharedBarrier = shared.barrier && state.all.find(f => f.properties.id === shared.barrier);
+  if (sharedBarrier) select(sharedBarrier, true);
   loadStats();
+
+  // The routing graph is the biggest file: the map is usable while it loads.
+  try {
+    const graph = await getJSON(API.graph);
+    state.router = new AccessRouter(graph);
+    addElevators(graph.elevators || []);
+  } catch (err) { console.warn("routing unavailable", err); }
+  state.routerLoading = false;
+  if (state.router && (shared.from || shared.to)) {
+    const r = state.route;
+    for (const k of ["from", "to"]) {
+      if (shared[k]) { const kind = k === "from" ? "start" : "end"; r[kind] = shared[k]; r.labels[kind] = t().pointOnMap; }
+    }
+    syncInputs(); computeRoute({ fit: !sharedBarrier });
+    if (!r.result && !sharedBarrier) map.easeTo({ center: r.start || r.end, zoom: 16 });
+  } else renderRoute();
+  state.hashReady = true;
+  writeHash();
 }
 
+for (const kind of ["start", "end"]) setupSearch(kind);
 document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.lang)));
-["minconf", "show-unsnapped", "show-rejected", "show-network"].forEach(id => $(id).addEventListener("input", () => {
+["minconf", "show-unsnapped", "show-rejected", "show-network", "show-elevators"].forEach(id => $(id).addEventListener("input", () => {
   $("minconf-out").textContent = (+$("minconf").value).toFixed(2); refresh();
 }));
 $("prev-view").addEventListener("click", () => { state.view--; renderDetail(); });
 $("next-view").addEventListener("click", () => { state.view++; renderDetail(); });
 $("fb-confirm").addEventListener("click", () => sendFeedback("confirm"));
 $("fb-reject").addEventListener("click", () => sendFeedback("reject"));
-$("close-detail").addEventListener("click", () => {
-  state.selected = null; $("detail").hidden = true;
-  map.getSource("selected").setData({ type: "FeatureCollection", features: [] }); refresh();
+$("close-detail").addEventListener("click", closeDetail);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && state.selected && !e.target.closest?.("input, textarea, select")) closeDetail();
 });
 $("profile").addEventListener("change", () => { storageSet("accessmap.profile", $("profile").value); computeRoute(); });
 $("route-clear").addEventListener("click", () => {
-  Object.assign(state.route, { start: null, end: null, result: null, error: null }); drawRoute(); renderRoute();
+  Object.assign(state.route, { start: null, end: null, labels: { start: "", end: "" }, result: null, error: null });
+  setRouteMsg(""); syncInputs(); drawRoute(); renderRoute(); writeHash();
 });
 $("sheet-toggle").addEventListener("click", () => {
   const c = $("panel").classList.toggle("collapsed");
   $("sheet-toggle").setAttribute("aria-expanded", String(!c));
 });
-map.on("load", () => init().catch(err => { console.error(err); $("area").textContent = "Could not load data: " + err.message; }));
+// A different shared link opened in this tab (replaceState never fires this): start over from it.
+window.addEventListener("hashchange", () => location.reload());
+map.on("load", () => init().catch(err => { console.error(err); showLoadError(err); }));
 </script>
 </body>
 </html>

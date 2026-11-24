@@ -10,6 +10,8 @@ Edge cost for a profile, over the part [a, b] of an edge that is walked (0 = nod
         forbidden type: conf ≥ forbid_threshold → blocked, else + fallback_penalty_m
         other types:    + penalty_m[type] × conf   (negative = small bonus, e.g. curb_ramp)
     wheelchair=no on the edge blocks it when the profile's osm_rules say "forbid".
+    Elevator edges (build-graph links a hub per elevator to each level) add
+    elevator_penalty_m / 2 each, so a ride (in + out) costs elevator_penalty_m (waiting).
     Clamped to ≥ MIN_COST_FACTOR × walked length so bonuses never make costs negative.
 
 Start and end snap to the nearest edge point from which the profile can leave: the walk
@@ -17,6 +19,7 @@ to one of the edge's ends is not blocked and that end is not a dead end (so a cl
 to a stair-only stub does not start on the stairs). Such a point wins over the plain
 nearest one only if it is at most SNAP_PREFER_USABLE_M further away; otherwise a real
 "no way around" would be hidden by snapping far away. Both routes share these points.
+Points never snap onto elevator edges.
 If no path avoids blocked edges, they are allowed at VIOLATION_M each (fewest violations
 first) and the answer carries the warning `no_barrier_free_path`.
 """
@@ -91,6 +94,8 @@ class Router:
         """can_leave(edge_idx, t) → bool. See the module docstring."""
         cands = []
         for i, e in enumerate(self.edges):
+            if e.get("elevator"):
+                continue
             d, t, q = self.project(e, lonlat)
             cands.append({"edge": i, "t": t, "lonlat": q, "snap_m": d})
         cands.sort(key=lambda c: (c["snap_m"], c["edge"]))
@@ -141,6 +146,8 @@ class Router:
                 cost += profile["penalty_m"].get(t, 0.0) * br["conf"]
         if edge["wheelchair_no"] and profile["osm_rules"].get("wheelchair_no") == "forbid":
             blocked = True
+        if edge.get("elevator"):
+            cost += self.defaults.get("elevator_penalty_m", 0.0) / 2 * abs(b - a)
         return max(cost, MIN_COST_FACTOR * walked), blocked
 
     # -- search -------------------------------------------------------------------------
@@ -242,6 +249,7 @@ class Router:
         coords: list[list[float]] = []
         length = 0.0
         found: list[dict] = []
+        elevators: list[str] = []
         thr = self.defaults["forbid_threshold"]
         wheelchair_rule = profile["osm_rules"].get("wheelchair_no") == "forbid"
         for ei, a, b in pieces:
@@ -251,6 +259,8 @@ class Router:
             seg = self._sub_coords(ed, a, b)
             coords.extend(seg if not coords else seg[1:])
             length += ed["len"] * abs(b - a)
+            if ed.get("elevator") and ed["elevator"] not in elevators:
+                elevators.append(ed["elevator"])
             for t, br in self.edge_barriers(ed, rejected, a, b).items():
                 forbidden = t in profile["forbidden"]
                 found.append({"id": br["id"], "type": t, "conf": br["conf"],
@@ -268,6 +278,7 @@ class Router:
         return {"length_m": round(length, 1), "coords": coords, "barriers": found,
                 "problems": counts, "problem_count": sum(counts.values()),
                 "violations": sum(br["violation"] for br in found),
+                "elevators": elevators,
                 "pieces": [[ei, round(a, 4), round(b, 4)] for ei, a, b in pieces if a != b]}
 
     # -- public -------------------------------------------------------------------------

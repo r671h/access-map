@@ -1,5 +1,7 @@
 # access-map
 
+[![CI](https://github.com/r671h/access-map/actions/workflows/ci.yml/badge.svg)](https://github.com/r671h/access-map/actions/workflows/ci.yml)
+
 **An accessibility map and router for people on wheels.** access-map finds barriers such as
 stairs, high curbs and cobblestones in open street-level photos (Mapillary) using Google's
 Gemini vision model. It places them on the OpenStreetMap walking network and computes
@@ -13,12 +15,19 @@ the plain shortest route.
 On the map you can:
 - **Browse barriers:** filter by type and confidence, and open any barrier to see the
   photo it was found in, with the model's bounding box.
-- **Compare routes:** pick a profile, click a start and a destination, and get *"The
+- **Compare routes:** pick a profile, set a start and a destination, and get *"The
   accessible route is 74 m longer (+11%), but avoids 2 staircases and 1 rough surface."*
+  Set the points by searching an address (keyboard friendly), with your current location,
+  or by clicking the map; drag the A/B pins to adjust, swap them with one click.
+- **Share a route:** the address bar always holds the route, profile and open barrier
+  (`#from=lat,lon&to=lat,lon&profile=wheelchair&barrier=…`); *Copy link* puts it on the
+  clipboard.
+- **Use elevators:** lifts from OpenStreetMap are shown on the map and linked into the
+  routing graph, so a route can take a lift instead of stairs; the summary says when it does.
 - **Give feedback:** mark a barrier ✓ Correct or ✗ Wrong. Rejected barriers stop
   affecting routes immediately.
 - **Switch language:** the interface and the barrier descriptions are available in
-  English and German.
+  English and German. The map and the statistics page follow the system's light or dark theme.
 - **Check the numbers:** a statistics page shows barriers per type, how many are attached
   to the walking network, and how often the model is right for each type.
 
@@ -76,7 +85,7 @@ Details, the errors that remain and their examples are in [REPORT.md](REPORT.md)
 
 ### Requirements
 - Python 3.11–3.13 and [uv](https://docs.astral.sh/uv/). Plain `pip` also works with `pyproject.toml`.
-- Node.js, only for the Vercel deploy and one optional test.
+- Node.js, only for the Vercel deploy and the JavaScript tests (skipped without it).
 - API keys, to build your own data:
   - **Gemini:** in [Google AI Studio](https://aistudio.google.com) choose *Get API key* →
     *Create API key*. The free tier is enough for a small area.
@@ -114,7 +123,7 @@ and `make pipeline` runs fetch-osm → fetch-images → analyze → geolocate �
 | Command | What it does |
 |---|---|
 | `accessmap coverage` | imagery and OSM coverage report for the configured area |
-| `accessmap fetch-osm` | walking graph, kerbs, steps, barriers |
+| `accessmap fetch-osm` | walking graph, kerbs, steps, barriers, elevators |
 | `accessmap fetch-images` | selects, downloads and crops Mapillary frames |
 | `accessmap analyze --all` | runs Gemini on every frame (cached; respects the call budget) |
 | `accessmap geolocate` | places, clusters and snaps detections → `barriers.geojson` |
@@ -181,6 +190,9 @@ a database the site still works; it just hides the feedback buttons.
 uv run pytest        # offline: Gemini, Mapillary and the database are mocked or faked
 uv run ruff check src tests
 ```
+GitHub Actions (`.github/workflows/ci.yml`) runs the same on every push and pull request:
+ruff, then pytest on Linux (Python 3.11–3.13) and Windows (3.12), with Node for the
+JavaScript checks (router parity, Vercel function, page script syntax).
 
 ## Project layout
 ```
@@ -207,7 +219,14 @@ tests/             offline tests (pytest; one Node test for the Vercel function)
   are often too far away or too small to judge.
 - **Snapshot in time:** the photos are up to 6 years old; construction sites and parked
   cars are deliberately ignored.
-- **Lifts:** elevators are not modelled yet, so stations with lifts can look inaccessible.
+- **Lifts:** `build-graph` links each OSM elevator to the nearest walkway node on every
+  level it serves (within 20 m) and adds a 30 m waiting penalty per ride. In Bielefeld 4 of
+  18 elevators add a link; two of them give the only step-free way between their levels
+  (Jahnplatz-Forum, the Hauptbahnhof Stadtbahn levels −1/−2). Lifts out of service are
+  not known.
+- **Levels when snapping:** a start or destination snaps to the nearest walkway whatever
+  its level, so a point on a square above an underground passage can start underground
+  (the route then uses the lift or stairs to come up).
 - **Curbs:** a curb blocks the whole street segment it is mapped on, not just the crossing.
 
 ## Data and attribution
@@ -217,4 +236,6 @@ tests/             offline tests (pytest; one Node test for the Vercel function)
   shown resized with their detection boxes; the demo bundles 51 of them, downscaled
   (`tests/fixtures/demo/photos/ATTRIBUTION.md`).
 - Barrier detection by Google Gemini (`gemini-3.8-flash`).
+- Address search by [Photon](https://photon.komoot.io) (komoot, OSM data); the browser
+  sends the typed text to it, limited to the mapped area.
 - Code: [MIT](LICENSE). The data keeps its own licences above (ODbL for OSM, CC BY-SA 4.0 for the photos).

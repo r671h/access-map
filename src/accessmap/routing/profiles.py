@@ -24,6 +24,7 @@ class Defaults(BaseModel):
     fallback_penalty_m: float = 400
     temporary_factor: float = 0.5
     temporary_max_age_days: int = 365
+    elevator_penalty_m: float = 30
 
 
 class Profile(BaseModel):

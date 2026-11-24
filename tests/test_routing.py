@@ -58,6 +58,20 @@ def make_graph(detour=True, stairs_conf=1.0, max_detour=0.5, extra_barriers=()):
             "surface_aliases": {"fine_gravel": "gravel"}, "max_detour": max_detour}
 
 
+def add_elevator(g, wheelchair_no=False, eid="osm-elevator-1"):
+    """Elevator hub H(50, 20) linked to A and B, the way build-graph links an elevator
+    to the nodes of the levels it serves: a step-free way past the stairs on A–B."""
+    g["nodes"].append(ll(50, 20))
+    h = len(g["nodes"]) - 1
+    for n, (x, y) in ((0, (0, 0)), (1, (100, 0))):
+        g["edges"].append({"u": n, "v": h, "len": math.hypot(50 - x, 20 - y),
+                           "surface": [], "wheelchair_no": wheelchair_no, "steps": False,
+                           "name": "Lift", "coords": [ll(x, y), ll(50, 20)], "barriers": [],
+                           "elevator": eid})
+    g["defaults"]["elevator_penalty_m"] = 30
+    return g
+
+
 A, C = ll(-5, 3), ll(205, 3)   # clicks a few metres off nodes A and C
 
 
@@ -125,6 +139,34 @@ def test_snaps_to_usable_edge_not_to_stair_stub():
     assert r["from"]["snap_m"] > 20   # snapped to B–C, not onto the stairs
 
 
+def test_wheelchair_takes_the_elevator_past_stairs():
+    r = Router(add_elevator(make_graph())).route(A, C, "wheelchair")
+    acc = r["accessible"]
+    assert acc["elevators"] == ["osm-elevator-1"] and acc["violations"] == 0
+    assert acc["length_m"] == pytest.approx(2 * math.hypot(50, 20) + 100, abs=1)
+    assert r["baseline"]["elevators"] == [] and r["avoided"] == {"stairs": 1}
+
+
+def test_elevator_marked_wheelchair_no_is_not_used_by_wheelchairs():
+    g = add_elevator(make_graph(max_detour=1.0), wheelchair_no=True)
+    r = Router(g).route(A, C, "wheelchair")
+    assert r["accessible"]["elevators"] == []
+    assert r["accessible"]["length_m"] == pytest.approx(320, abs=1)
+
+
+def test_elevator_penalty_keeps_level_routes_off_the_lift():
+    # Without stairs, A–B (100 m) beats the 108 m lift ride plus its 30 m penalty.
+    g = add_elevator(make_graph())
+    g["barriers"], g["edges"][0]["barriers"] = [], []
+    assert Router(g).route(A, C, "wheelchair")["accessible"]["elevators"] == []
+
+
+def test_points_never_snap_onto_elevator_edges():
+    g = add_elevator(make_graph())
+    r = Router(g).route(ll(50, 19), C, "wheelchair")
+    assert r["from"]["snap_m"] > 15   # onto A–B, not onto the lift right next to it
+
+
 def test_wheelchair_no_osm_rule():
     g = make_graph(max_detour=1.0)
     g["barriers"] = []
@@ -164,7 +206,8 @@ def test_js_router_matches_python(tmp_path):
     """web/static/router.js must give the same answers as the Python router."""
     cases = []
     graphs = {"detour": make_graph(), "nodetour": make_graph(detour=False),
-              "lowconf": make_graph(stairs_conf=0.5, max_detour=1.0)}
+              "lowconf": make_graph(stairs_conf=0.5, max_detour=1.0),
+              "elevator": add_elevator(make_graph())}
     for gname in graphs:
         for prof in PROFILES:
             for rejected in ([], ["stairs-1"]):
@@ -194,5 +237,66 @@ fs.writeFileSync("out.json", JSON.stringify(out));
         for key in ("same_route", "extra_m", "detour", "avoided", "warnings"):
             assert jr[key] == pr[key], (case, key, jr[key], pr[key])
         for side in ("baseline", "accessible"):
-            for key in ("length_m", "problems", "violations", "pieces"):
+            for key in ("length_m", "problems", "violations", "elevators", "pieces"):
                 assert jr[side][key] == pr[side][key], (case, side, key)
+
+
+def _walk_graph():
+    """Street at level 0 (S1–S2) and a passage at level -1 (U1–U2) 8 m south of it,
+    joined only by stairs S1–U1."""
+    import networkx as nx
+
+    G = nx.MultiDiGraph()
+    pts = {"S1": (0, 0), "S2": (100, 0), "U1": (0, -8), "U2": (100, -8)}
+    for n, (x, y) in pts.items():
+        lon, lat = ll(x, y)
+        G.add_node(n, x=lon, y=lat)
+    for u, v, tags in (("S1", "S2", {"highway": "footway"}),
+                       ("U1", "U2", {"highway": "footway", "level": "-1"}),
+                       ("S1", "U1", {"highway": "steps", "level": "-1;0"})):
+        (x0, y0), (x1, y1) = pts[u], pts[v]
+        d = {"length": math.hypot(x1 - x0, y1 - y0), **tags}
+        G.add_edge(u, v, 0, **d)
+        G.add_edge(v, u, 0, **d)
+    return G
+
+
+def _elevator(osm_id, x, y, **tags):
+    return {"type": "Feature", "geometry": {"type": "Point", "coordinates": ll(x, y)},
+            "properties": {"osm_id": osm_id, "highway": "elevator", **tags}}
+
+
+def test_elevator_links_join_the_levels_it_serves():
+    from accessmap.routing.graph import elevator_links, parse_levels
+
+    assert parse_levels("-1;0") == {-1.0, 0.0} and parse_levels(["1", "x;2"]) == {1.0, 2.0}
+    G = _walk_graph()
+    links = elevator_links(G, [_elevator(1, 95, -4, level="0;-1"),   # S2 and U2 in reach
+                               _elevator(2, 50, 60, level="0;-1"),   # nothing within 20 m
+                               _elevator(3, 0, -4)])                 # untagged: levels nearby
+    assert [(lv, n) for lv, n, _ in links["1"]] == [(-1.0, "U2"), (0.0, "S2")]
+    assert "2" not in links
+    # S1 and U1 are equally near and both count as levels -1 and 0 (the stairs tagged
+    # "-1;0" meet there): the nearest node for every level is S1, so nothing to link.
+    assert "3" not in links
+
+
+def test_build_graph_adds_elevator_hub(settings):
+    import shutil as sh
+
+    from accessmap.routing.graph import build
+
+    sh.copy(Path(__file__).parents[1] / "config" / "profiles.yaml",
+            settings.root / "config" / "profiles.yaml")
+    g = build(_walk_graph(), [], [], settings,
+              [_elevator(1, 95, -4, level="0;-1", name="Lift"),
+               _elevator(2, 50, 60, level="0;-1")])
+    lifts = [e for e in g["edges"] if e.get("elevator")]
+    assert len(lifts) == 2 and {e["elevator"] for e in lifts} == {"osm-elevator-1"}
+    assert len(g["nodes"]) == 5 and all(e["v"] == 4 for e in lifts)
+    assert [e["linked"] for e in g["elevators"]] == [True, False]
+    assert g["stats"]["elevators_linked"] == 1 and g["stats"]["osm_elevators"] == 2
+    # Wheelchair from the street (S1 side) down to U2: stairs blocked, the lift is used.
+    r = Router(g).route(ll(10, 1), ll(90, -9), "wheelchair")
+    assert r["accessible"]["elevators"] == ["osm-elevator-1"]
+    assert r["accessible"]["violations"] == 0
