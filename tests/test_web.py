@@ -226,3 +226,48 @@ def test_routing_endpoints(client, settings):
     export_site(settings, settings.root / "site")
     assert (settings.root / "site" / "data" / "graph.json").is_file()
     assert (settings.root / "site" / "router.js").is_file()
+
+
+def test_feedback_store_closes_its_connections(tmp_path, monkeypatch):
+    import sqlite3
+
+    from accessmap.web.app import Feedback, FeedbackStore
+
+    opened = []
+    real_connect = sqlite3.connect
+
+    class Tracked(sqlite3.Connection):
+        closed = False
+
+        def close(self):
+            self.closed = True
+            super().close()
+
+    def connect(*args, **kwargs):
+        conn = real_connect(*args, factory=Tracked, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    store = FeedbackStore(tmp_path / "fb.sqlite")
+    store.add(Feedback(barrier_id="b1", verdict="reject"))
+    assert store.summary() == {"b1": {"confirm": 0, "reject": 1, "status": "rejected"}}
+    assert opened and all(c.closed for c in opened)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+@pytest.mark.parametrize("page", ["index.html", "stats.html"])
+def test_inline_scripts_parse(page, tmp_path):
+    """The pages' inline JavaScript must at least parse (nothing else checks the frontend)."""
+    import re
+
+    html = (Path(__file__).parents[1] / "src/accessmap/web/static" / page).read_text(
+        encoding="utf-8")
+    scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
+    assert scripts
+    for i, code in enumerate(scripts):
+        path = tmp_path / f"{page}.{i}.js"
+        path.write_text(code, encoding="utf-8")
+        p = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True,
+                           timeout=60)
+        assert p.returncode == 0, p.stderr

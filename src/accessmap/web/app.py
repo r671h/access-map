@@ -12,6 +12,7 @@ import json
 import sqlite3
 import threading
 from collections import Counter
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -66,8 +67,17 @@ class FeedbackStore:
                 verdict TEXT NOT NULL CHECK (verdict IN ('confirm', 'reject')),
                 comment TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)""")
 
+    @contextmanager
     def _conn(self):
-        return sqlite3.connect(self.path)
+        """Commits on success, rolls back on error and always closes the connection
+        (`with sqlite3.connect()` alone leaves it open, which leaks handles and keeps
+        the file locked on Windows)."""
+        conn = sqlite3.connect(self.path, timeout=10)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def add(self, fb: Feedback) -> int:
         with self._conn() as c:
@@ -102,6 +112,7 @@ class SiteData:
         self._metrics = _FileCache(settings.paths.reports / "metrics.json", {})
         self._graph = _FileCache(proc / "routing_graph.json", None)
         self._frames: dict = {}
+        self._frames_lock = threading.Lock()  # sync endpoints run in a thread pool
 
     def config(self) -> dict:
         p = self.settings.project
@@ -120,13 +131,14 @@ class SiteData:
         if not path.is_file():
             return {}
         m = path.stat().st_mtime
-        if self._frames.get("mtime") != m:
-            import pandas as pd
+        with self._frames_lock:
+            if self._frames.get("mtime") != m:
+                import pandas as pd
 
-            df = pd.read_parquet(path)
-            self._frames = {"mtime": m,
-                            "data": {r["frame_id"]: r for r in df.to_dict("records")}}
-        return self._frames["data"]
+                df = pd.read_parquet(path)
+                self._frames = {"mtime": m,
+                                "data": {r["frame_id"]: r for r in df.to_dict("records")}}
+            return self._frames["data"]
 
     def barriers(self, feedback: dict[str, dict] | None = None) -> list[dict]:
         fb = feedback or {}

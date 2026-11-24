@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff check src tests
+
+  test:
+    # Every test is offline: Gemini, Mapillary, Overpass and the feedback database are
+    # mocked or faked, and data comes from tests/fixtures/. Node runs the JS router
+    # parity test, the Vercel function test and the frontend syntax check.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.11" }
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: ubuntu-latest, python: "3.13" }
+          - { os: windows-latest, python: "3.12" }
+    runs-on: ${{ matrix.os }}
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run pytest

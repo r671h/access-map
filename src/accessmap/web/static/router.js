@@ -87,9 +87,11 @@
     }
 
     snap(lonlat, canLeave) {
-      const cands = this.edges.map((e, i) => {
+      const cands = [];
+      this.edges.forEach((e, i) => {
+        if (e.elevator) return;
         const [d, t, q] = this.project(e, lonlat);
-        return { edge: i, t, lonlat: q, snap_m: d };
+        cands.push({ edge: i, t, lonlat: q, snap_m: d });
       });
       cands.sort((a, b) => a.snap_m - b.snap_m || a.edge - b.edge);
       if (!cands.length || cands[0].snap_m > MAX_SNAP_M) {
@@ -136,6 +138,7 @@
         }
       }
       if (edge.wheelchair_no && profile.osm_rules.wheelchair_no === "forbid") blocked = true;
+      if (edge.elevator) cost += (this.defaults.elevator_penalty_m ?? 0.0) / 2 * Math.abs(b - a);
       return [Math.max(cost, MIN_COST_FACTOR * walked), blocked];
     }
 
@@ -223,6 +226,7 @@
       const coords = [];
       let length = 0.0;
       const found = [];
+      const elevators = [];
       const thr = this.defaults.forbid_threshold;
       const wheelchairRule = profile.osm_rules.wheelchair_no === "forbid";
       for (const [ei, a, b] of pieces) {
@@ -231,6 +235,7 @@
         const seg = this.subCoords(ed, a, b);
         coords.push(...(coords.length ? seg.slice(1) : seg));
         length += ed.len * Math.abs(b - a);
+        if (ed.elevator && !elevators.includes(ed.elevator)) elevators.push(ed.elevator);
         for (const [t, br] of Object.entries(this.edgeBarriers(ed, rejected, a, b))) {
           const forbidden = profile.forbidden.includes(t);
           found.push({ id: br.id, type: t, conf: br.conf, source: br.source, lonlat: br.lonlat,
@@ -247,6 +252,7 @@
       return { length_m: round(length, 1), coords, barriers: found, problems: counts,
         problem_count: Object.values(counts).reduce((s, x) => s + x, 0),
         violations: found.filter(br => br.violation).length,
+        elevators,
         pieces: pieces.filter(([, a, b]) => a !== b).map(([ei, a, b]) => [ei, round(a, 4), round(b, 4)]) };
     }
 

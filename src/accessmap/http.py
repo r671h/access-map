@@ -10,10 +10,14 @@ from typing import TypeVar
 
 import requests
 
+from accessmap import __version__
+
 log = logging.getLogger(__name__)
 
 RETRY_STATUS = {429, 500, 502, 503, 504}
-USER_AGENT = "access-map/0.1 (accessibility research; https://github.com/)"
+# Overpass and Mapillary ask automated clients to identify themselves with a contact URL.
+USER_AGENT = (f"access-map/{__version__} "
+              "(accessibility research; https://github.com/r671h/access-map)")
 
 T = TypeVar("T")
 

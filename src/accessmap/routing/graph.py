@@ -9,6 +9,13 @@ Barrier sources on an edge:
 - detected: snapped barriers from barriers.geojson (on the edge recorded when snapping);
 - osm: `highway=steps` → stairs on that edge; kerb nodes (`kerb=raised` → raised_curb,
   `lowered|flush` → curb_ramp) on the nearest edge within KERB_SNAP_M.
+
+Elevators (`highway=elevator` nodes): osmnx keeps an elevator only where it lies on a
+walkable way, and then usually on one level, so the levels it serves are often joined by
+stairs alone. For each elevator, the nearest graph node on each of its levels (from its
+`level` tag, else every level found nearby) within ELEVATOR_LINK_M is linked to a new hub
+node at the elevator by "elevator" edges. Edge levels come from OSM `level`; untagged
+edges count as level 0.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from accessmap.routing.profiles import SURFACE_ALIASES, load_profiles
 log = logging.getLogger(__name__)
 
 KERB_SNAP_M = 5.0
+ELEVATOR_LINK_M = 20.0
 OSM_KERB_TYPES = {"raised": "raised_curb", "lowered": "curb_ramp", "flush": "curb_ramp"}
 COORD_DIGITS = 6
 FORMAT = 2  # 2: barriers carry "t", their position along the edge
@@ -51,14 +59,74 @@ def _midpoint(coords: list[list[float]]) -> list[float]:
     return [round(p.x, COORD_DIGITS), round(p.y, COORD_DIGITS)]
 
 
-def build(G: nx.MultiDiGraph, detected: list[dict], kerbs: list[dict], settings: Settings
-          ) -> dict:
+def parse_levels(value) -> set[float]:
+    """OSM `level` values ("0", "-1;0", lists from merged ways) → set of levels.
+    Ranges ("0-3") and other non-numeric parts are skipped."""
+    out = set()
+    for v in values(value):
+        for part in str(v).split(";"):
+            try:
+                out.add(float(part.strip()))
+            except ValueError:
+                continue
+    return out
+
+
+def node_levels(G: nx.MultiDiGraph) -> dict:
+    """node → levels of the edges that meet there (untagged edges: level 0)."""
+    out: dict = {}
+    for u, v, d in G.edges(data=True):
+        lv = parse_levels(d.get("level")) or {0.0}
+        out.setdefault(u, set()).update(lv)
+        out.setdefault(v, set()).update(lv)
+    return out
+
+
+def elevator_links(G: nx.MultiDiGraph, elevators: list[dict],
+                   radius_m: float = ELEVATOR_LINK_M) -> dict[str, list[tuple]]:
+    """elevator osm_id → [(level, node, distance m)] ordered by level, for elevators that
+    join at least two distinct graph nodes."""
+    from accessmap.geo.snap import to_metric
+
+    levels = node_levels(G)
+    pts = [(n, *to_metric(d["x"], d["y"])) for n, d in G.nodes(data=True)]
+    out = {}
+    for f in elevators:
+        ex, ey = to_metric(*f["geometry"]["coordinates"])
+        wanted = parse_levels(f["properties"].get("level"))
+        nearest: dict[float, tuple[float, str, object]] = {}
+        for n, x, y in pts:
+            dist = ((x - ex) ** 2 + (y - ey) ** 2) ** 0.5
+            if dist > radius_m:
+                continue
+            for lv in levels.get(n, ()):
+                # Fewer than two tagged levels says nothing about where the lift goes.
+                if len(wanted) >= 2 and lv not in wanted:
+                    continue
+                cand = (dist, str(n), n)
+                if lv not in nearest or cand[:2] < nearest[lv][:2]:
+                    nearest[lv] = cand
+        chosen, seen = [], set()
+        for lv in sorted(nearest):
+            dist, _, n = nearest[lv]
+            if n not in seen:
+                seen.add(n)
+                chosen.append((lv, n, dist))
+        if len(chosen) >= 2:
+            out[str(f["properties"]["osm_id"])] = chosen
+    return out
+
+
+def build(G: nx.MultiDiGraph, detected: list[dict], kerbs: list[dict], settings: Settings,
+          elevators: list[dict] = ()) -> dict:
     """G: walking MultiDiGraph (both directions). detected: snapped barrier features.
-    kerbs: OSM kerb point features."""
+    kerbs, elevators: OSM point features."""
     from accessmap.geo.snap import NetworkIndex, to_metric
 
     node_ids = list(G.nodes)
     node_idx = {n: i for i, n in enumerate(node_ids)}
+    nodes = [[round(G.nodes[n]["x"], COORD_DIGITS), round(G.nodes[n]["y"], COORD_DIGITS)]
+             for n in node_ids]
     edges, edge_idx = [], {}
     for u, v, k, d in G.edges(keys=True, data=True):
         if (v, u, k) in edge_idx:
@@ -75,6 +143,29 @@ def build(G: nx.MultiDiGraph, detected: list[dict], kerbs: list[dict], settings:
             "coords": _edge_coords(G, u, v, d),
             "barriers": [],
         })
+
+    # Elevators: a hub node per linked elevator, one edge from it to each level's node.
+    # Edges get no surface (the profile's `unknown` factor) and are never snapped onto.
+    links = elevator_links(G, list(elevators))
+    elevator_list = []
+    for f in elevators:
+        p = f["properties"]
+        eid = f"osm-elevator-{p['osm_id']}"
+        hub = [round(c, COORD_DIGITS) for c in f["geometry"]["coordinates"]]
+        link = links.get(str(p["osm_id"]))
+        elevator_list.append({"id": eid, "lonlat": hub, "name": p.get("name"),
+                              "level": p.get("level"), "wheelchair": p.get("wheelchair"),
+                              "linked": link is not None})
+        if link is None:
+            continue
+        nodes.append(hub)
+        for _lv, n, dist in link:
+            edges.append({
+                "u": node_idx[n], "v": len(nodes) - 1, "len": round(max(dist, 1.0), 2),
+                "surface": [], "wheelchair_no": p.get("wheelchair") == "no", "steps": False,
+                "name": p.get("name"), "coords": [nodes[node_idx[n]], hub], "barriers": [],
+                "elevator": eid,
+            })
 
     barriers = []
 
@@ -127,20 +218,31 @@ def build(G: nx.MultiDiGraph, detected: list[dict], kerbs: list[dict], settings:
     pf = load_profiles(settings.root / "config" / "profiles.yaml", settings.project.profiles)
     return {
         "format": FORMAT,
-        "nodes": [[round(G.nodes[n]["x"], COORD_DIGITS), round(G.nodes[n]["y"], COORD_DIGITS)]
-                  for n in node_ids],
+        "nodes": nodes,
         "edges": edges,
         "barriers": barriers,
+        "elevators": elevator_list,
         "profiles": {k: v.model_dump() for k, v in pf.profiles.items()},
         "defaults": pf.defaults.model_dump(),
         "surface_aliases": SURFACE_ALIASES,
         "max_detour": settings.project.routing.max_detour,
-        "stats": {"nodes": len(node_ids), "edges": len(edges), "barriers": len(barriers),
+        "stats": {"nodes": len(nodes), "edges": len(edges), "barriers": len(barriers),
                   "detected_on_graph": len(detected) - unmatched,
                   "osm_steps_edges": sum(e["steps"] for e in edges),
                   "osm_kerbs": kerbs_used,
-                  "wheelchair_no_edges": sum(e["wheelchair_no"] for e in edges)},
+                  "wheelchair_no_edges": sum(e["wheelchair_no"] for e in edges),
+                  "osm_elevators": len(elevator_list),
+                  "elevators_linked": len(links)},
     }
+
+
+def load_elevators(osm_dir: Path) -> list[dict]:
+    path = osm_dir / "elevators.geojson"
+    if not path.is_file():
+        log.warning("%s is missing: run `accessmap fetch-osm` to route through elevators",
+                    path)
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))["features"]
 
 
 def graph_path(settings: Settings) -> Path:
@@ -155,7 +257,7 @@ def run(settings: Settings) -> dict:
     detected = json.loads((settings.paths.processed / "barriers.geojson"
                            ).read_text(encoding="utf-8"))["features"]
     kerbs = json.loads((osm / "kerbs.geojson").read_text(encoding="utf-8"))["features"]
-    g = build(G, detected, kerbs, settings)
+    g = build(G, detected, kerbs, settings, load_elevators(osm))
     graph_path(settings).write_text(json.dumps(g, ensure_ascii=False, separators=(",", ":")),
                                     encoding="utf-8", newline="\n")
     return g["stats"] | {"path": str(graph_path(settings))}

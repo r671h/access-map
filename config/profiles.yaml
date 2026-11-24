@@ -12,6 +12,7 @@ defaults:
   fallback_penalty_m: 400
   temporary_factor: 0.5
   temporary_max_age_days: 365
+  elevator_penalty_m: 30   # waiting for and riding a lift, as metres of walking
 
 profiles:
   wheelchair:
